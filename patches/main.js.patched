@@ -1,0 +1,285 @@
+/*
+  올리 메신저 — 설치형 껍데기 (Windows·macOS).
+
+  화면 자체는 웹(allywork.kr/messages)을 그대로 쓴다. 메신저 UI 를 여기
+  또 만들면 웹·앱·데스크톱 세 벌이 서로 어긋난다 — 회사 메신저의 본체는
+  '항상 켜져 있고, 안 읽은 수가 보이고, 알림이 오는 것'이고 그게 이 파일의
+  일이다. 웹은 UA 의 'AllyDesktop' 을 보고 뼈대 없는 메신저 화면을 준다.
+
+  로그인 세션은 Electron 프로필에 남아 다음 실행에도 유지된다.
+*/
+
+const { app, BrowserWindow, Tray, Menu, shell, ipcMain, nativeImage, Notification } = require('electron');
+const path = require('path');
+const fs = require('fs');
+
+/*
+  창 위치·크기 기억 — 매번 화면 한가운데 960x720 으로 뜨면
+  '내 자리' 를 잡아 둔 사람이 매일 다시 끌어야 한다.
+*/
+const statePath = () => path.join(app.getPath('userData'), 'window-state.json');
+function loadWindowState() {
+  try {
+    return JSON.parse(fs.readFileSync(statePath(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function saveWindowState() {
+  if (!win || win.isDestroyed()) return;
+  try {
+    fs.writeFileSync(statePath(), JSON.stringify(win.getBounds()));
+  } catch {
+    /* 상태 저장 실패로 앱이 흔들리면 안 된다 */
+  }
+}
+
+const APP_URL = process.env.ALLY_URL || 'https://www.allywork.kr/messages';
+const APP_ORIGIN = new URL(APP_URL).origin;
+
+let win = null;
+let tray = null;
+let quitting = false;
+let unread = 0;
+
+/*
+  Windows 배너 알림의 조건 — AppUserModelID 가 바로가기와 일치해야
+  알림 센터가 이 앱을 알아본다. 안 박으면 패키징 앱에서 배너가
+  조용히 안 뜨는 수가 있다 (NSIS 바로가기의 appId 와 같은 값).
+*/
+if (process.platform === 'win32') {
+  app.setAppUserModelId('kr.allywork.messenger');
+}
+
+/* 한 벌만 뜬다 — 두 번 실행하면 기존 창을 앞으로 */
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+}
+
+function createWindow() {
+  const saved = loadWindowState();
+  win = new BrowserWindow({
+    width: saved?.width || 960,
+    height: saved?.height || 720,
+    x: saved?.x,
+    y: saved?.y,
+    minWidth: 420,
+    minHeight: 560,
+    title: '올리 메신저',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false,
+    },
+  });
+
+  // 웹이 데스크톱을 알아보는 표식
+  const ua = win.webContents.getUserAgent();
+  win.webContents.setUserAgent(`${ua} AllyDesktop/${app.getVersion()}`);
+
+  win.loadURL(APP_URL);
+
+  /*
+    닫기 = 숨기기. 회사 메신저는 꺼지면 안 된다 — 트레이/독에 남아
+    알림과 뱃지를 계속 받는다. 진짜 종료는 트레이 메뉴에서.
+  */
+  win.on('moved', saveWindowState);
+  win.on('resized', saveWindowState);
+  win.on('close', (event) => {
+    saveWindowState();
+    if (!quitting) {
+      event.preventDefault();
+      if (process.platform === 'darwin') app.hide();
+      else win.hide();
+    }
+  });
+
+  // 올리 밖으로 나가는 링크(첨부 원본, 외부 URL)는 기본 브라우저로
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith(APP_ORIGIN)) return { action: 'allow' };
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(APP_ORIGIN)) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+}
+
+function trayIcon() {
+  const file =
+    process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png';
+  return nativeImage.createFromPath(path.join(__dirname, 'assets', file));
+}
+
+/* 작업표시줄 오버레이(빨간 점) — 한 번 읽어 두고 다시 쓴다 */
+let overlayCache = null;
+function unreadOverlay() {
+  if (!overlayCache) {
+    overlayCache = nativeImage.createFromPath(
+      path.join(__dirname, 'assets', 'unread.png')
+    );
+  }
+  return overlayCache;
+}
+
+function createTray() {
+  tray = new Tray(trayIcon());
+  const rebuild = () => {
+    tray.setToolTip(unread > 0 ? `올리 메신저 — 안 읽음 ${unread}` : '올리 메신저');
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        {
+          label: unread > 0 ? `안 읽은 메시지 ${unread}개` : '새 메시지 없음',
+          enabled: false,
+        },
+        { type: 'separator' },
+        {
+          label: '열기',
+          click: () => {
+            if (win) {
+              win.show();
+              win.focus();
+            }
+          },
+        },
+        {
+          label: '시작할 때 자동 실행',
+          type: 'checkbox',
+          checked: app.getLoginItemSettings().openAtLogin,
+          click: (item) => {
+            app.setLoginItemSettings({ openAtLogin: item.checked });
+          },
+        },
+        { type: 'separator' },
+        {
+          label: '종료',
+          click: () => {
+            quitting = true;
+            app.quit();
+          },
+        },
+      ])
+    );
+  };
+  rebuild();
+  tray.on('click', () => {
+    if (win) {
+      win.show();
+      win.focus();
+    }
+  });
+  tray.rebuild = rebuild;
+}
+
+/*
+  새 메시지 배너 — 웹이 '남이 보낸 새 메시지' 를 감지해 넘긴다.
+  누르면 창을 앞으로 가져오고 그 방을 열라고 웹에 되돌려 준다.
+*/
+ipcMain.on('ally:notify', (_event, payload) => {
+  if (!Notification.isSupported()) return;
+  const { title, body, roomId } = payload || {};
+  const banner = new Notification({
+    title: String(title || '올리 메신저'),
+    body: String(body || ''),
+  });
+  banner.on('click', () => {
+    if (!win) return;
+    win.show();
+    win.focus();
+    if (roomId) win.webContents.send('ally:open-room', String(roomId));
+  });
+  banner.show();
+});
+
+/* 웹(preload 다리)이 보내는 안 읽은 수 → 독 뱃지·트레이 */
+ipcMain.on('ally:badge', (_event, count) => {
+  unread = Number(count) || 0;
+  if (process.platform === 'darwin') {
+    app.setBadgeCount(unread);
+  }
+  if (tray && tray.rebuild) tray.rebuild();
+  /*
+    Windows 는 작업표시줄 단추에 **오버레이 아이콘**을 붙인다.
+    맥은 독에 숫자가 붙는데 윈도우에는 아무 표시가 없어서, 창을 내려 두면
+    안 읽은 것이 있는지 트레이 툴팁을 열어야 알 수 있었다.
+  */
+  if (process.platform === 'win32' && win && !win.isDestroyed()) {
+    if (unread > 0) {
+      win.setOverlayIcon(unreadOverlay(), `안 읽은 메시지 ${unread}개`);
+    } else {
+      win.setOverlayIcon(null, '');
+    }
+  }
+  // 창이 숨어 있을 때는 깜빡임까지
+  if (process.platform === 'win32' && win && !win.isVisible() && unread > 0) {
+    win.flashFrame(true);
+  }
+});
+
+/*
+  자동 업데이트 — 릴리즈 저장소(olly-desktop)의 새 버전을 보면
+  내려받아 두었다가 종료할 때 갈아끼운다. 회사에 뿌린 뒤 고칠 때마다
+  전원이 다시 받게 할 수는 없다.
+
+  Windows 만 — macOS 자동 업데이트는 서명(공증)된 앱에서만 동작해서,
+  지금은 조용히 건너뛴다.
+*/
+function setupAutoUpdate() {
+  if (!app.isPackaged || process.platform !== 'win32') return;
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+    const check = () => autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    check();
+    setInterval(check, 4 * 60 * 60 * 1000);
+  } catch {
+    /* 업데이트 확인 실패는 메신저 동작과 무관 */
+  }
+}
+
+app.whenReady().then(() => {
+  setupAutoUpdate();
+  /*
+    첫 실행이면 자동 시작을 기본으로 켠다 — 회사 메신저는 켜 두는 것이
+    기본값이어야 한다. 끄고 싶은 사람은 트레이 메뉴에서 끈다(기억된다).
+  */
+  const firstRunFlag = path.join(app.getPath('userData'), 'first-run-done');
+  if (!fs.existsSync(firstRunFlag)) {
+    try {
+      app.setLoginItemSettings({ openAtLogin: true });
+      fs.writeFileSync(firstRunFlag, '1');
+    } catch {
+      /* 자동 시작 설정 실패는 치명이 아니다 */
+    }
+  }
+
+  createWindow();
+  createTray();
+
+  app.on('activate', () => {
+    // macOS 독 아이콘 클릭 — 숨겨 둔 창을 다시
+    if (win) win.show();
+    else createWindow();
+  });
+});
+
+app.on('before-quit', () => {
+  quitting = true;
+});
+
+// 창을 다 닫아도 트레이에 산다 (메신저는 꺼지면 안 된다)
+app.on('window-all-closed', () => {});
