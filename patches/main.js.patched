@@ -9,7 +9,7 @@
   로그인 세션은 Electron 프로필에 남아 다음 실행에도 유지된다.
 */
 
-const { app, BrowserWindow, Tray, Menu, shell, ipcMain, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, shell, ipcMain, nativeImage, Notification, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -65,13 +65,41 @@ if (!gotLock) {
   });
 }
 
+/*
+  처음 켤 때 놓을 자리 — 화면 **우측 하단에 딱 붙인다.**
+
+  메신저는 종일 띄워 두는 물건이다. 한가운데 뜨면 보던 것을 가려서
+  매번 옆으로 끌게 된다. 오른쪽 아래는 알림이 뜨는 자리이기도 해서
+  눈이 이미 그쪽을 본다.
+
+  작업표시줄을 침범하지 않도록 workArea 를 쓴다(화면 전체 크기가 아니다).
+  자리를 옮기면 그 자리를 기억하므로, 이 계산은 처음 한 번만 쓰인다.
+*/
+function cornerPosition(width, height) {
+  const { workArea } = screen.getPrimaryDisplay();
+  const margin = 8;
+  return {
+    x: Math.max(workArea.x, workArea.x + workArea.width - width - margin),
+    y: Math.max(workArea.y, workArea.y + workArea.height - height - margin),
+  };
+}
+
 function createWindow() {
   const saved = loadWindowState();
+  const width = saved?.width || 520;
+  const height = saved?.height || 940;
+  const corner = cornerPosition(width, height);
   win = new BrowserWindow({
-    width: saved?.width || 960,
-    height: saved?.height || 720,
-    x: saved?.x,
-    y: saved?.y,
+    /*
+      아마란스 메신저와 같은 결 — 좁고 긴 창이다(약 520x970).
+      회사 메신저는 모니터 한켠에 종일 띄워 두는 물건이라, 넓은 창은
+      자리를 뺏는다. 960x720 은 웹 화면 기준이었지 상주 창 기준이 아니었다.
+      넓히면 목록과 대화가 좌우로 갈라진다(웹이 768 부터 나눈다).
+    */
+    width,
+    height,
+    x: saved?.x ?? corner.x,
+    y: saved?.y ?? corner.y,
     minWidth: 420,
     minHeight: 560,
     title: '올리 메신저',

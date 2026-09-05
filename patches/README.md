@@ -55,3 +55,54 @@ base64 -d patches/unread.png.base64 > assets/unread.png
 
 윈도우 11 에서 설치본의 `app.asar` 를 고쳐 다시 묶고 띄워, 작업표시줄
 아이콘에 빨간 점이 붙는 것을 눈으로 봤다. 안 읽은 수가 0 이 되면 사라진다.
+
+---
+
+# 창 크기·위치 — 아마란스처럼 (2026-09-06)
+
+## 무엇이 문제였나
+
+기본 창이 **960x720** 이었다. 웹 화면 기준이지 상주 창 기준이 아니다.
+아마란스 메신저는 **좁고 긴 창(약 520x970)** 으로 모니터 한켠에 종일 떠 있다.
+넓은 창은 자리를 뺏어서 매번 옆으로 끌게 된다.
+
+또 한가운데 떠서 보던 것을 가렸다.
+
+## 고친 방법
+
+`createWindow()` 에서
+
+```js
+width: saved?.width || 520,
+height: saved?.height || 940,
+x: saved?.x ?? corner.x,
+y: saved?.y ?? corner.y,
+```
+
+`cornerPosition()` 을 새로 둔다 — 화면 **우측 하단에 딱 붙인다**.
+알림이 뜨는 자리이기도 해서 눈이 이미 그쪽을 본다.
+
+```js
+function cornerPosition(width, height) {
+  const { workArea } = screen.getPrimaryDisplay();
+  const margin = 8;
+  return {
+    x: Math.max(workArea.x, workArea.x + workArea.width - width - margin),
+    y: Math.max(workArea.y, workArea.y + workArea.height - height - margin),
+  };
+}
+```
+
+`screen` 을 `require('electron')` 목록에 더해야 한다.
+작업표시줄을 침범하지 않도록 화면 전체가 아니라 `workArea` 를 쓴다.
+자리를 옮기면 그 자리를 기억하므로 이 계산은 처음 한 번만 쓰인다.
+
+## 함께 고친 것 (웹)
+
+좁은 창에서는 대화 목록이 화면 높이를 채우지 않아 아래가 허옇게 남았다.
+`app/messages/page.tsx` 에서 목록 카드를 늘 `flex-1` 로 바꿨다(커밋 7733354e).
+
+## 확인한 것
+
+윈도우 11 에서 설치본을 다시 묶고 띄워, 우측 하단(오른쪽 끝 2554 /
+작업영역 2560, 아래 1522 / 1528)에 좁고 긴 모양으로 뜨는 것을 눈으로 봤다.
