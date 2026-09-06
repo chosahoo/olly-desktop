@@ -63,7 +63,7 @@ base64 -d patches/unread.png.base64 > assets/unread.png
 ## 무엇이 문제였나
 
 기본 창이 **960x720** 이었다. 웹 화면 기준이지 상주 창 기준이 아니다.
-아마란스 메신저는 **좁고 긴 창(약 520x970)** 으로 모니터 한켠에 종일 떠 있다.
+아마란스 메신저는 **작은 창** 이다 — 실제로 띄워 놓고 재니 363x582 였다.
 넓은 창은 자리를 뺏어서 매번 옆으로 끌게 된다.
 
 또 한가운데 떠서 보던 것을 가렸다.
@@ -73,8 +73,8 @@ base64 -d patches/unread.png.base64 > assets/unread.png
 `createWindow()` 에서
 
 ```js
-width: saved?.width || 520,
-height: saved?.height || 940,
+width: saved?.width || 380,
+height: saved?.height || 600,
 x: saved?.x ?? corner.x,
 y: saved?.y ?? corner.y,
 ```
@@ -106,3 +106,6 @@ function cornerPosition(width, height) {
 
 윈도우 11 에서 설치본을 다시 묶고 띄워, 우측 하단(오른쪽 끝 2554 /
 작업영역 2560, 아래 1522 / 1528)에 좁고 긴 모양으로 뜨는 것을 눈으로 봤다.
+
+최소 크기도 420x560 에서 320x480 으로 내렸다 — 기본이 380x600 이라
+최소가 그보다 크면 안 된다.
