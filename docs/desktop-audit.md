@@ -504,9 +504,40 @@ HKCU\Software\Microsoft\Windows\CurrentVersion\Run
     OK를 클릭하면 종료됩니다.          [확인] [취소]
 
 60명에게 새 판을 돌릴 때, 사람들은 대개 메신저를 켜 두고 있다.
-자동 업데이트(`electron-updater`)로 올리면 이 창이 안 뜬다 — 앱이 스스로
-껐다 켜기 때문이다. **손으로 설치 파일을 돌리게 하면 이 창을 보게 된다.**
-안내에 한 줄 넣어야 한다.
+자동 업데이트(`electron-updater`)로 올리면 이 창이 안 떴다 — 앱이 스스로
+껐다 켜기 때문이다. **손으로 설치 파일을 돌릴 때만 이 창을 봤다.**
+
+### 안내로 때우지 않고 고쳤다 (0.1.3)
+
+`build/installer.nsh` 에 `customCheckAppRunning` 을 정의했다.
+electron-builder 가 `!ifmacrodef customCheckAppRunning` 으로 열어 둔
+자리라, 정의하면 기본 검사 대신 우리 것이 들어간다. 원본을 그대로
+옮기고 **묻는 두 줄만** 뺐다.
+
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK doStopProcess
+    Quit
+
+곱게 닫는 순서(창 닫기 신호 → 1초 → 강제)는 원본 그대로 두었고,
+**못 끄는 경우 묻는 창은 남겼다** — 관리자 권한으로 떠 있으면 사람이
+손을 대야 풀리는데, 그것까지 없애면 설치가 조용히 실패한다.
+
+**함정 하나.** 이 매크로를 정의하면 electron-builder 가
+`getProcessInfo.nsh` 와 `Var pid` 를 **일부러 안 넣어 준다**
+(`!ifmacrondef customCheckAppRunning` 로 감싸 놨다). 안 챙기면 제거
+프로그램을 만들 때 `Invalid command: "${GetProcessInfo}"` 로 빌드가
+깨진다. 우리 파일 맨 위에서 직접 넣는다.
+
+### 부숴서 견줬다
+
+같은 조건 — 앱 4개 프로세스가 떠 있는 채로 설치 파일 실행.
+
+| | 걸린 시간 | 화면 |
+|---|---|---|
+| 0.1.2 (고침 없음) | **끝나지 않음** (7분 뒤 사람이 눌러서 진행) | "실행 중입니다. OK를 클릭하면 종료됩니다" |
+| 0.1.3 (고침 넣음) | **46초, 종료코드 0** | 진행 막대만 |
+
+끝난 뒤: 제거 항목 하나(`653a2661…` = 0.1.3), 설치 폴더 하나,
+로그인 쿠키 20,480 그대로, 앱이 다시 떴다.
 
 ## 남은 지저분한 것
 
