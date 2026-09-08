@@ -46,6 +46,25 @@ const DEFAULT_URL = 'https://www.allywork.kr/messages';
 const APP_URL = app.isPackaged ? DEFAULT_URL : process.env.ALLY_URL || DEFAULT_URL;
 const APP_ORIGIN = new URL(APP_URL).origin;
 
+/*
+  우리 주소인가.
+
+  **앞글자 비교(startsWith)로 보면 안 된다.** APP_ORIGIN 이
+  'https://www.allywork.kr' 이라 'https://www.allywork.kr.evil.com' 이
+  통과한다 — 공격자가 자기 도메인 앞에 붙이기만 하면 된다. origin 을
+  통째로 견준다. 파싱이 안 되면 우리 것이 아니다.
+
+  창을 만들기 전에 정해 둔다 — did-fail-load 처리기가 이보다 먼저
+  등록되는데, 안쪽에 두면 나중에 순서를 건드릴 때 TDZ 로 터진다.
+*/
+const isOurs = (url) => {
+  try {
+    return new URL(url).origin === APP_ORIGIN;
+  } catch {
+    return false;
+  }
+};
+
 let win = null;
 let tray = null;
 let quitting = false;
@@ -190,8 +209,18 @@ function createWindow() {
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
   };
   win.webContents.on('did-fail-load', (_e, code, _desc, url, isMainFrame) => {
-    // -3 은 우리가 부른 취소다 (사용자가 다른 곳으로 옮겼을 때)
-    if (isMainFrame && code !== -3 && !String(url).startsWith('data:')) showOffline();
+    if (!isMainFrame) return;
+    if (code === -3) return; // 우리가 부른 취소
+    /*
+      **우리 주소를 못 열었을 때만** 이 화면을 보여준다.
+
+      처음엔 실패면 무조건 띄웠는데, 그러면 바깥 링크를 눌렀을 때도 떴다 —
+      will-navigate 가 막고 브라우저로 보낸 뒤 그 주소의 실패가 여기로
+      올라온다. **브라우저로 보냈을 뿐인데 앱 창이 보던 화면을 잃었다.**
+      (실제로 가짜 도메인으로 이동을 시도해 보다 찾았다.)
+    */
+    if (!isOurs(url)) return;
+    showOffline();
   });
 
   win.loadURL(APP_URL);
@@ -229,14 +258,6 @@ function createWindow() {
     origin 을 통째로 견준다. 파싱이 실패하면 우리 것이 아니다.
     (2026-09-08)
   */
-  const isOurs = (url) => {
-    try {
-      return new URL(url).origin === APP_ORIGIN;
-    } catch {
-      return false;
-    }
-  };
-
   /*
     권한은 전부 거절한다.
 
