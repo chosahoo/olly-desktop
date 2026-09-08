@@ -114,3 +114,26 @@ Var pid
     ${endIf}
   ${endIf}
 !macroend
+
+/*
+  옛 이름으로 만들어진 시작메뉴 바로가기를 치운다.
+
+  왜 —
+
+  0.1.3 까지는 바로가기 이름이 productName 그대로 "Olly Messenger" 였다.
+  0.1.4 부터 "올리 메신저" 로 바꿨는데, electron-builder 는 **옛 이름
+  링크를 안 지운다.** 지우는 코드가 있긴 한데(installer.nsh 의
+  `Rename $oldStartMenuLink $newStartMenuLink`) `keepShortcuts` 가
+  켜졌을 때만 돈다. 보통 설치는 새것만 만들고 끝이라 시작메뉴에 두 개가
+  남는다.
+
+  새로 까는 사람은 겪지 않는다 — 옛 이름 링크가 아예 없으니까.
+  **이미 깔아 본 PC 만** 두 개가 된다. 개발·시험용 PC 가 그렇다.
+
+  없어도 되는 것을 지우는 것뿐이라 실패해도 무시한다.
+*/
+!macro customInstall
+  Delete "$SMPROGRAMS\Olly Messenger.lnk"
+  Delete "$DESKTOP\Olly Messenger.lnk"
+  ClearErrors
+!macroend
