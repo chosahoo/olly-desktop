@@ -157,3 +157,75 @@ README 의 macOS 안내와 릴리스의 dmg 는 정리해야 한다(맥에서 �
 
 하드웨어 토큰은 해외 배송이라 1~2주가 더 붙는다.
 SSL.com eSigner 나 Azure 는 클라우드라 배송이 없다.
+
+---
+
+# Smart App Control 이 서명 없는 설치본을 아예 막았다 (2026-09-09)
+
+0.1.4 설치본을 만들어 돌렸더니 실행조차 안 됐다.
+
+    An Application Control policy has blocked this file.
+
+이벤트 로그(`Microsoft-Windows-CodeIntegrity/Operational`):
+
+    3077 · Code Integrity determined that a process attempted to load
+           Olly-Messenger-Setup-0.1.4.exe that did not meet the
+           Enterprise signing level requirements
+    3118 · Smart App Control Block Details
+
+이 PC 의 상태 —
+
+    HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy
+      VerifiedAndReputablePolicyState = 1     (0=꺼짐 1=켜짐 2=평가중)
+
+## 왜 이게 SmartScreen 보다 나쁜가
+
+| | SmartScreen | **Smart App Control** |
+|---|---|---|
+| 나오는 것 | 파란 경고창 | 실행 자체가 안 됨 |
+| 사람이 넘어갈 수 있나 | **있다** — '추가 정보 → 실행' | **없다.** 버튼이 없다 |
+| 끄는 법 | 설정에서 켰다 껐다 | **한 번 끄면 다시 못 켠다** (윈도우 재설치 전까지) |
+
+'추가 정보 → 실행' 안내로 넘길 수 있다고 적어 둔 것은 SmartScreen 얘기다.
+Smart App Control 이 켜진 PC 에서는 **안내할 것이 없다.**
+
+## 더 나쁜 것 — 예측이 안 된다
+
+같은 날 만든 설치본인데 0.1.2 와 0.1.3 은 그냥 실행됐고 0.1.4 만 막혔다.
+Smart App Control 은 **파일 하나하나의 평판**을 클라우드에 물어본다.
+서명이 없으면 평판이 쌓일 근거가 없으니, **되기도 하고 안 되기도 한다.**
+60명에게 뿌리면서 "몇 명은 안 될 수도 있는데 누군지는 모른다" 는 상태가
+된다.
+
+## 누가 걸리나
+
+Smart App Control 은 **윈도우 11 을 새로 깐 PC 에서 기본으로 켜진다**
+(22H2 이상). 윈도우 10 에서 올린 PC 는 꺼져 있다. 즉 —
+
+- 오래 쓰던 PC · 윈도우 10 에서 올린 PC → 대체로 안 걸린다
+- **새로 산 PC · 윈도우 11 을 새로 깐 PC → 걸린다**
+
+CSR 은 매장이 여럿이고 PC 나이도 제각각이다. 몇 대가 새 PC 인지 모른다.
+
+## 그래서 인증서는 선택이 아니다
+
+전에는 "빨간 화면이 보기 싫으니 사자" 였는데, 지금은 **"안 그러면 못 까는
+PC 가 생긴다"** 다. 10월 첫주 구매 일정을 미루면 안 된다.
+
+서명하면 Smart App Control 이 무조건 통과시킨다고 단언하지는 못한다 —
+마이크로소프트는 '신뢰할 수 있는 인증서로 서명되고 평판이 좋은 앱' 을
+허용한다고만 밝힌다. 다만 **서명이 없으면 평판이 쌓일 길 자체가 없다.**
+EV 인증서는 SmartScreen 평판을 즉시 주는 것으로 알려져 있고, 이 문제를
+푸는 유일한 정식 경로다.
+
+## 하면 안 되는 것 — Smart App Control 끄기
+
+**한 번 끄면 윈도우를 다시 깔기 전까지 못 켠다.** 직원 PC 의 보안 설정을
+영구히 낮추는 일이다. 시연이나 급한 설치 때문에 이걸 건드리면 안 된다.
+
+## 0.1.4 는 이 PC 에서 깔아 보지 못했다
+
+이 문서를 쓰는 시점에 이 PC 에 깔린 것은 **0.1.3** 이다. 0.1.4 는
+만들어졌지만(`dist/`) Smart App Control 이 막아서 설치 확인을 못 했다.
+0.1.4 에서 바뀐 것(언어 파일 정리, 바로가기 이름)은 서명한 판으로
+다시 확인해야 한다.
