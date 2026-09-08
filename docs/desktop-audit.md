@@ -468,3 +468,47 @@ win.webContents.on('did-fail-load', (_e, code, _desc, url, isMainFrame) => {
 HKCU\Software\Microsoft\Windows\CurrentVersion\Run
   kr.allywork.messenger  →  ...\Programs\ally-desktop\Olly Messenger.exe
 ```
+
+---
+
+# 여기서 만든 것을 실제로 깔아 봤다 (2026-09-09)
+
+윈도우 PC 에서 만든 `Olly-Messenger-Setup-0.1.2.exe` 를 이미 깔려 있던
+0.1.1 위에 그대로 실행했다. **두 개가 깔리는지**가 제일 걱정이었다 —
+제거 항목 GUID 가 `appId` 에서 나오는데, 그걸 틀리면 지우지도 못하는
+유령이 하나 더 생긴다.
+
+## 결과
+
+| 본 것 | 전 | 후 |
+|---|---|---|
+| 제거 항목 | `653a2661…` = Olly Messenger **0.1.1** | `653a2661…` = Olly Messenger **0.1.2** — 같은 키, 하나뿐 |
+| 설치 폴더 | `%LOCALAPPDATA%\Programs\ally-desktop` | 그대로, 딴 폴더 안 생김 |
+| exe | 0.1.1.0 | 0.1.2.0 |
+| 자동 시작 | `kr.allywork.messenger` → 설치본 경로 | 그대로 |
+| 로그인 쿠키 | `Network\Cookies` 20,480 | **20,480 그대로 — 다시 로그인 안 함** |
+| 앱 | 0.1.1 (고침 0개) | 0.1.2, 대화 목록 그대로 뜸 |
+
+트레이 메뉴에 **로그아웃이 실제로 떴다** — `안 읽은 메시지 1개` / `열기` /
+`✓ 시작할 때 자동 실행` / `로그아웃` / `종료`. 0.1.1 에는 없던 항목이다.
+
+설치본 asar 를 다시 열어 보니 `isOurs` · `showOffline` · `onSomeScreen` ·
+`setPermissionRequestHandler` · `fromOurWindow` · `will-redirect` 가 모두
+들어 있다. 깔기 전엔 하나도 없었다(327줄 → 500줄).
+
+## 배포 때 알아 둘 것 — 켜져 있으면 물어본다
+
+앱이 돌고 있는 채로 설치하면 이 창이 뜨고 **거기서 멈춰 기다린다.**
+
+    Olly Messenger이(가) 실행 중입니다.
+    OK를 클릭하면 종료됩니다.          [확인] [취소]
+
+60명에게 새 판을 돌릴 때, 사람들은 대개 메신저를 켜 두고 있다.
+자동 업데이트(`electron-updater`)로 올리면 이 창이 안 뜬다 — 앱이 스스로
+껐다 켜기 때문이다. **손으로 설치 파일을 돌리게 하면 이 창을 보게 된다.**
+안내에 한 줄 넣어야 한다.
+
+## 남은 지저분한 것
+
+시작메뉴에 `올리 메신저.lnk`(9/5)가 남아 있다. 0.1.0 때 이름이 달라서
+생긴 잔재고, 지금 판은 `Olly Messenger.lnk` 를 새로 쓴다. 지워도 된다.
