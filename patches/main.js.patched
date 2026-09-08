@@ -34,7 +34,16 @@ function saveWindowState() {
   }
 }
 
-const APP_URL = process.env.ALLY_URL || 'https://www.allywork.kr/messages';
+/*
+  주소는 못 박는다.
+
+  전에는 `process.env.ALLY_URL` 을 배포본에서도 그대로 따랐다. 개발할 때
+  편하려고 둔 것인데, 그러면 이 PC 를 만질 수 있는 사람이 환경변수 하나로
+  **'올리 메신저' 라고 적힌 창에 아무 사이트나 띄울 수 있다** — preload
+  다리까지 딸려 간다. 개발 중(app.isPackaged 가 false)일 때만 따른다.
+*/
+const DEFAULT_URL = 'https://www.allywork.kr/messages';
+const APP_URL = app.isPackaged ? DEFAULT_URL : process.env.ALLY_URL || DEFAULT_URL;
 const APP_ORIGIN = new URL(APP_URL).origin;
 
 let win = null;
@@ -84,10 +93,35 @@ function cornerPosition(width, height) {
   };
 }
 
+/*
+  저장해 둔 자리가 지금도 화면 안인지 본다.
+
+  노트북에 모니터를 달아 쓰다가 빼면, 기억해 둔 x/y 가 **없는 화면**을
+  가리킨다. 그러면 창이 보이지 않는 곳에 뜬다 — 트레이 아이콘은 있는데
+  눌러도 아무 일이 안 일어나는 것처럼 보인다. 회사 PC 는 모니터를 뺐다
+  꽂았다 한다.
+
+  어느 화면에든 조금이라도 걸치면 그 자리를 쓰고, 아니면 버리고 처음처럼
+  우측 하단에 놓는다.
+*/
+function onSomeScreen(bounds) {
+  if (!bounds || typeof bounds.x !== 'number' || typeof bounds.y !== 'number') return false;
+  const margin = 40; // 제목줄이 이만큼은 보여야 잡아서 끌 수 있다
+  return screen.getAllDisplays().some(({ workArea: a }) => {
+    return (
+      bounds.x + bounds.width > a.x + margin &&
+      bounds.x < a.x + a.width - margin &&
+      bounds.y + margin < a.y + a.height &&
+      bounds.y >= a.y - 1
+    );
+  });
+}
+
 function createWindow() {
-  const saved = loadWindowState();
-  const width = saved?.width || 380;
-  const height = saved?.height || 600;
+  const stored = loadWindowState();
+  const saved = onSomeScreen(stored) ? stored : null;
+  const width = stored?.width || 380;
+  const height = stored?.height || 600;
   const corner = cornerPosition(width, height);
   win = new BrowserWindow({
     /*
@@ -129,6 +163,36 @@ function createWindow() {
   // 웹이 데스크톱을 알아보는 표식
   const ua = win.webContents.getUserAgent();
   win.webContents.setUserAgent(`${ua} AllyDesktop/${app.getVersion()}`);
+
+  /*
+    못 열면 알려 준다.
+
+    이 프로그램은 윈도우 시작과 함께 뜬다 — **네트워크가 붙기 전에 뜨는
+    일이 흔하다.** 전에는 그냥 크롬의 회색 오류 화면이 나왔고, 사람은
+    프로그램이 고장 난 줄 알았다. 사정을 적고 다시 시도할 자리를 준다.
+  */
+  const showOffline = () => {
+    const html = `<!doctype html><meta charset="utf-8">
+      <style>
+        body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+             font-family:'Malgun Gothic',system-ui,sans-serif;background:#f8fafc;color:#0f172a}
+        .box{text-align:center;padding:24px}
+        h1{font-size:15px;margin:0 0 6px}
+        p{font-size:12.5px;color:#64748b;margin:0 0 16px;line-height:1.6}
+        button{font:inherit;font-size:13px;padding:8px 18px;border:0;border-radius:8px;
+               background:#0a7d43;color:#fff;cursor:pointer}
+      </style>
+      <div class="box">
+        <h1>연결하지 못했습니다</h1>
+        <p>인터넷이 아직 안 붙었을 수 있습니다.<br>잠시 뒤 다시 시도해 주세요.</p>
+        <button onclick="location.replace('${APP_URL}')">다시 시도</button>
+      </div>`;
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  };
+  win.webContents.on('did-fail-load', (_e, code, _desc, url, isMainFrame) => {
+    // -3 은 우리가 부른 취소다 (사용자가 다른 곳으로 옮겼을 때)
+    if (isMainFrame && code !== -3 && !String(url).startsWith('data:')) showOffline();
+  });
 
   win.loadURL(APP_URL);
 
@@ -253,6 +317,35 @@ function createTray() {
             app.setLoginItemSettings({ openAtLogin: item.checked });
           },
         },
+        {
+          /*
+            **로그아웃이 어디에도 없었다.**
+
+            데스크톱은 웹 뼈대를 걷어내고 메신저만 그리는데, 로그아웃
+            단추가 그 뼈대에 있었다. 그래서 한 번 로그인하면 나갈 길이
+            없었다 — 세션은 Electron 프로필에 남아 재시작해도 유지된다.
+            자리를 옮기거나 PC 를 물려주면 다음 사람이 전 사람 메신저를
+            그대로 본다. 매장 공용 PC 면 더 그렇다.
+          */
+          label: '로그아웃',
+          click: async () => {
+            if (!win || win.isDestroyed()) return;
+            try {
+              await win.webContents.session.clearStorageData({
+                storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers'],
+              });
+            } catch {
+              /* 지우다 실패해도 다시 열기는 한다 */
+            }
+            unread = 0;
+            if (tray && tray.rebuild) tray.rebuild();
+            if (process.platform === 'win32') win.setOverlayIcon(null, '');
+            if (process.platform === 'darwin') app.setBadgeCount(0);
+            win.loadURL(APP_URL);
+            win.show();
+            win.focus();
+          },
+        },
         { type: 'separator' },
         {
           label: '종료',
@@ -278,7 +371,18 @@ function createTray() {
   새 메시지 배너 — 웹이 '남이 보낸 새 메시지' 를 감지해 넘긴다.
   누르면 창을 앞으로 가져오고 그 방을 열라고 웹에 되돌려 준다.
 */
+/*
+  우리 창에서 온 것만 받는다.
+
+  ipcMain 은 preload 를 가진 아무 webContents 에게서나 받는다. 창은 지금
+  하나뿐이고 이동도 우리 origin 으로 묶었지만, 받는 쪽에서도 한 번 더
+  본다 — 나중에 창을 하나 더 여는 날 이 검사가 없으면 조용히 뚫린다.
+*/
+const fromOurWindow = (event) =>
+  !!win && !win.isDestroyed() && event.sender === win.webContents;
+
 ipcMain.on('ally:notify', (_event, payload) => {
+  if (!fromOurWindow(_event)) return;
   if (!Notification.isSupported()) return;
   const { title, body, roomId } = payload || {};
   const banner = new Notification({
@@ -296,6 +400,7 @@ ipcMain.on('ally:notify', (_event, payload) => {
 
 /* 웹(preload 다리)이 보내는 안 읽은 수 → 독 뱃지·트레이 */
 ipcMain.on('ally:badge', (_event, count) => {
+  if (!fromOurWindow(_event)) return;
   unread = Number(count) || 0;
   if (process.platform === 'darwin') {
     app.setBadgeCount(unread);
