@@ -147,14 +147,61 @@ function createWindow() {
     }
   });
 
-  // 올리 밖으로 나가는 링크(첨부 원본, 외부 URL)는 기본 브라우저로
+  /*
+    올리 밖으로 나가는 링크(첨부 원본, 외부 URL)는 기본 브라우저로.
+
+    **전에는 url.startsWith(APP_ORIGIN) 으로 봤다. 그건 앞글자 비교라
+    뚫린다.**
+
+        APP_ORIGIN = 'https://www.allywork.kr'
+        'https://www.allywork.kr.evil.com/login'.startsWith(APP_ORIGIN) → true
+
+    공격자가 자기 도메인에 allywork.kr 로 시작하는 이름을 붙이면
+    (allywork.kr.evil.com) 그 페이지가 **앱 창 안에서** 열렸다. 그러면
+    preload 다리(window.allyDesktop)까지 딸려 간다. 게다가 우리가 창
+    제목을 '올리 메신저' 로 못 박아 두어서, **'올리 메신저' 라고 적힌
+    창에 남의 로그인 화면**이 뜬다. 메시지에 링크 하나 던지면 된다.
+
+    origin 을 통째로 견준다. 파싱이 실패하면 우리 것이 아니다.
+    (2026-09-08)
+  */
+  const isOurs = (url) => {
+    try {
+      return new URL(url).origin === APP_ORIGIN;
+    } catch {
+      return false;
+    }
+  };
+
+  /*
+    권한은 전부 거절한다.
+
+    Electron 은 크롬과 달리 **묻지 않고 대체로 내준다**(기본 처리기가
+    허용에 가깝다). 메신저는 카메라·마이크·위치·클립보드 읽기가 필요
+    없다. 알림도 우리 다리(ally:notify)로 나가지 웹 Notification 을
+    쓰지 않는다. 필요해지면 그때 그것만 연다.
+  */
+  win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(false);
+  });
+
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(APP_ORIGIN)) return { action: 'allow' };
+    if (isOurs(url)) return { action: 'allow' };
     shell.openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(APP_ORIGIN)) {
+    if (!isOurs(url)) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+  /*
+    되돌림(redirect)도 같이 막는다. will-navigate 는 처음 이동만 잡는다 —
+    우리 주소로 들어갔다가 30x 로 남의 주소로 넘어가면 그건 안 잡힌다.
+  */
+  win.webContents.on('will-redirect', (event, url) => {
+    if (!isOurs(url)) {
       event.preventDefault();
       shell.openExternal(url);
     }

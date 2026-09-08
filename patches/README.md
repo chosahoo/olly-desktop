@@ -193,3 +193,102 @@ ShellExperienceHost 가 따로 그리는 오버레이라서다. 열 장을 연�
 
 - `main.js.patched` — 2026-09-07 자 main.js 전체 (창 제목 수정 포함)
 - `preload.js` — 웹↔껍데기 다리. 알림·뱃지가 여기를 지난다
+
+---
+
+# 🔴 앱 창이 남의 사이트로 갈 수 있었다 (2026-09-08)
+
+**이건 급하다. 11월 배포 전에 꼭 들어가야 한다.**
+
+## 무엇이 문제였나
+
+밖으로 나가는 링크를 기본 브라우저로 넘기는 판정이 **앞글자 비교**였다.
+
+```js
+const APP_ORIGIN = new URL(APP_URL).origin;   // 'https://www.allywork.kr'
+
+win.webContents.setWindowOpenHandler(({ url }) => {
+  if (url.startsWith(APP_ORIGIN)) return { action: 'allow' };   // ← 여기
+  ...
+});
+win.webContents.on('will-navigate', (event, url) => {
+  if (!url.startsWith(APP_ORIGIN)) { ... }                      // ← 여기
+});
+```
+
+`startsWith` 라서 이런 주소가 통과한다:
+
+```
+'https://www.allywork.kr.evil.com/login'.startsWith('https://www.allywork.kr')  → true
+'https://www.allywork.krmalware.com/'  .startsWith('https://www.allywork.kr')  → true
+```
+
+공격자가 자기 도메인 앞에 `allywork.kr` 을 붙이기만 하면 된다
+(`allywork.kr.evil.com` 은 evil.com 주인이 마음대로 만든다).
+
+## 왜 나쁜가
+
+1. 그 페이지가 **앱 창 안에서** 열린다
+2. **preload 다리(window.allyDesktop)가 딸려 간다** — 남의 페이지가
+   `notify()` 로 '올리 메신저' 이름의 OS 알림을 띄울 수 있다
+3. 우리가 창 제목을 `올리 메신저` 로 못 박아 두었다(위 9/7 항목). 그래서
+   **'올리 메신저' 라고 적힌 창에 남의 로그인 화면**이 뜬다
+4. 메신저 대화에 링크 하나 던지면 된다. 본문 URL 은 눌리게 되어 있다
+
+CSR 직원 60명에게 뿌릴 프로그램이다.
+
+## 고친 방법
+
+`origin` 을 통째로 견준다. 파싱이 실패하면 우리 것이 아니다.
+
+```js
+const isOurs = (url) => {
+  try {
+    return new URL(url).origin === APP_ORIGIN;
+  } catch {
+    return false;
+  }
+};
+```
+
+`setWindowOpenHandler` 와 `will-navigate` 둘 다 이걸 쓰고,
+**`will-redirect` 도 새로 막았다** — `will-navigate` 는 처음 이동만 잡는다.
+우리 주소로 들어갔다가 30x 로 남의 주소로 넘어가면 안 잡혔다.
+
+## 확인한 것
+
+```
+통과  https://www.allywork.kr/messages
+막힘  https://www.allywork.kr.evil.com/login
+막힘  https://www.allywork.krmalware.com/
+막힘  http://www.allywork.kr/messages      ← http 강등도 막는다
+막힘  javascript:alert(1)
+막힘  not a url
+막힘  https://allywork.kr/messages         ← www 없는 주소는 브라우저로
+```
+
+---
+
+# 권한 요청을 전부 거절한다 (2026-09-08)
+
+Electron 은 크롬과 달리 **묻지 않고 대체로 내준다** — 기본 처리기가
+허용에 가깝다. 위 이동 구멍과 겹치면, 남의 페이지가 카메라·마이크를
+조용히 얻을 수 있었다.
+
+메신저는 카메라·마이크·위치·클립보드 읽기가 필요 없다. 알림도 우리
+다리(`ally:notify`)로 나가지 웹 Notification 을 쓰지 않는다.
+
+```js
+win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+  callback(false);
+});
+```
+
+필요해지면 그때 그것만 연다.
+
+## 함께 확인해서 이상 없던 것
+
+- `contextIsolation: true`, `nodeIntegration: false` — 제대로 잡혀 있다
+- `certificate-error` 를 무시하는 코드 없음
+- `webSecurity`·`sandbox` 는 안전한 기본값 그대로
+- preload 가 내주는 것은 `setBadge`·`notify` 둘뿐
