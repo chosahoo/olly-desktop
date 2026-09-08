@@ -109,3 +109,87 @@ function cornerPosition(width, height) {
 
 최소 크기도 420x560 에서 320x480 으로 내렸다 — 기본이 380x600 이라
 최소가 그보다 크면 안 된다.
+
+---
+
+# 창 제목이 웹 제목으로 덮여 잘렸다 (2026-09-07)
+
+## 무엇이 문제였나
+
+`BrowserWindow` 의 `title` 은 **웹 페이지의 `<title>` 이 덮어쓴다.** 그래서
+380px 짜리 좁은 창 제목줄에
+
+    Ally(올리) - HR의 모든 것 | 급여·근태·휴가 통합 관리
+
+가 들어가 뒤가 잘렸다. 메신저 창인데 무슨 창인지 알 수가 없었다.
+
+## 고친 방법
+
+`createWindow()` 안에서 웹이 제목을 바꾸려 할 때 막는다.
+
+```js
+win.on('page-title-updated', (event) => {
+  event.preventDefault();
+  win.setTitle('올리 메신저');
+});
+win.setTitle('올리 메신저');
+```
+
+## 확인한 것
+
+설치본 창 제목줄이 `올리 메신저` 로 뜬다.
+
+---
+
+# 알림 배너를 끝까지 확인했다 (2026-09-08)
+
+**코드를 고친 것은 없다.** 전에는 "이어져 있다" 까지만 말할 수 있었는데,
+실제로 뜨는 것과 눌렀을 때를 처음 봤다. 그 방법을 남긴다.
+
+## 어떻게 확인했나
+
+개발용 electron 이 이 PC 에 없어 직접 못 쏜다. 대신 **다른 사람이 보낸
+메시지를 DB 에 직접 넣었다.** 웹이 10초마다 방 목록을 받아 새 메시지를
+보면 `bridge.notify()` 를 부르므로, 넣기만 하면 배너가 뜬다.
+
+(주)데모테크의 1:1 방에서만 했고 — **페흐도도(실사용)와 CSR 은 안
+건드렸다** — 끝나고 넣은 메시지를 전부 지웠다.
+
+## 결과
+
+| | |
+|---|---|
+| 앱 목록에 뜨기까지 | 8~9초 (10초 폴링) |
+| 작업표시줄 빨간 오버레이 | 붙는다 |
+| 윈도우가 알림을 받았나 | `LastNotificationAddedTime` 이 +8~9초로 갱신, 횟수 6 → 7 |
+| 배너 실물 | 알림 센터에 남는다 — `Olly Messenger` / 제목이 **보낸 사람** / 본문이 메시지 |
+| **눌렀을 때** | **앱이 앞으로 나오고 그 방이 열린다** (`ally:open-room`) |
+
+## 배너는 화면 캡처로 못 잡는다 — 결함이 아니다
+
+`CopyFromScreen`(BitBlt)으로 찍으면 **토스트가 안 잡힌다.**
+ShellExperienceHost 가 따로 그리는 오버레이라서다. 열 장을 연속으로
+찍어도 전부 같은 그림이 나온다.
+
+다음에 확인할 일이 생기면 캡처로 씨름하지 말고 이 둘을 볼 것:
+
+    # 알림이 언제 들어왔나
+    HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\kr.allywork.messenger
+      LastNotificationAddedTime (FILETIME) · PeriodicNotificationCount
+
+    # 실물
+    Win+N (알림 센터)
+
+## 함께 확인한 것
+
+- `app.setAppUserModelId('kr.allywork.messenger')` 가 **설치본 바로가기의
+  AppID 와 일치한다** (`Get-StartApps` 로 확인). 어긋나면 윈도우에서
+  배너가 조용히 안 뜬다
+- 알림을 쏘는 폴링(`fetchRooms`)에는 `visibilityState` 게이트가 없다 —
+  창을 내려 두어도 돈다. 게이트는 방 안의 메시지 폴링에만 있고, 그건
+  읽음 처리를 겸해서 그렇다
+
+## 파일
+
+- `main.js.patched` — 2026-09-07 자 main.js 전체 (창 제목 수정 포함)
+- `preload.js` — 웹↔껍데기 다리. 알림·뱃지가 여기를 지난다

@@ -113,6 +113,19 @@ function createWindow() {
     },
   });
 
+  /*
+    제목은 '올리 메신저' 로 못 박는다.
+
+    BrowserWindow 의 title 은 웹 페이지의 <title> 이 덮어쓴다. 그래서
+    좁은 창에 'Ally(올리) - HR의 모든 것 | 급여·근태·휴가 통합 관리' 가
+    들어가 뒤가 잘렸다. 메신저 창이니 메신저라고만 적는다.
+  */
+  win.on('page-title-updated', (event) => {
+    event.preventDefault();
+    win.setTitle('올리 메신저');
+  });
+  win.setTitle('올리 메신저');
+
   // 웹이 데스크톱을 알아보는 표식
   const ua = win.webContents.getUserAgent();
   win.webContents.setUserAgent(`${ua} AllyDesktop/${app.getVersion()}`);
