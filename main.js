@@ -763,8 +763,6 @@ function setupAutoUpdate() {
 
     checkForUpdates(false);
     setInterval(() => checkForUpdates(false), 4 * 60 * 60 * 1000);
-    enforceAutoLogout();
-    setInterval(enforceAutoLogout, 60 * 60 * 1000);
   } catch {
     /* 업데이트 확인 실패는 메신저 동작과 무관 */
   }
@@ -788,6 +786,14 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
+
+  /*
+    자동 로그아웃 — 창을 만든 뒤에 본다(로그아웃은 창의 세션을 지운다).
+    처음엔 setupAutoUpdate 안에 뒀다가 개발 모드에선 안 돌았고, 다음엔 창보다
+    먼저 불러 아무것도 안 했다(9/10, 심어 놓고 돌려 보다 잡음). 켤 때 + 한 시간마다.
+  */
+  enforceAutoLogout();
+  setInterval(enforceAutoLogout, 60 * 60 * 1000);
 
   app.on('activate', () => {
     // macOS 독 아이콘 클릭 — 숨겨 둔 창을 다시
