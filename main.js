@@ -419,6 +419,24 @@ ipcMain.on('ally:notify', (_event, payload) => {
   banner.show();
 });
 
+/*
+  웹의 게시판·결재 단추 → 기본 브라우저.
+
+  상주 창은 메신저만 싣고 웹 뼈대를 걷어내므로, 이게 없으면 메신저에서
+  게시판·결재로 갈 길이 없다. 아마란스 메신저는 왼쪽 아이콘으로 모듈을
+  브라우저에 연다.
+
+  **우리 origin 만 연다.** preload 다리가 넓어진 만큼, 웹이 뚫려 남의
+  주소를 밀어 넣어도 여기서 버린다 — 링크 처리(setWindowOpenHandler)와
+  같은 isOurs 잣대다.
+*/
+ipcMain.on('ally:open-external', (_event, url) => {
+  if (!fromOurWindow(_event)) return;
+  const target = String(url || '');
+  if (!isOurs(target)) return;
+  shell.openExternal(target);
+});
+
 /* 웹(preload 다리)이 보내는 안 읽은 수 → 독 뱃지·트레이 */
 ipcMain.on('ally:badge', (_event, count) => {
   if (!fromOurWindow(_event)) return;

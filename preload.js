@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('allyDesktop', {
       body: String(payload?.body || ''),
       roomId: String(payload?.roomId || ''),
     }),
+  /*
+    우리 주소를 기본 브라우저로 연다 — 메신저의 게시판·결재 단추가 쓴다.
+    주소만 넘기고 판단은 main 이 한다(우리 origin 이 아니면 버린다).
+    다리를 넓히는 셈이라 남의 주소는 main 이 반드시 막아야 한다.
+  */
+  openExternal: (url) => ipcRenderer.send('ally:open-external', String(url || '')),
 });
 
 // 배너 클릭 → 웹에 '이 방을 열어라' 이벤트로 전달
