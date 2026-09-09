@@ -1,7 +1,7 @@
 {
   "name": "ally-desktop",
   "productName": "올리 메신저",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "올리(Ally) 설치형 메신저 — Windows",
   "main": "main.js",
   "author": "Ally <official@allywork.kr>",
@@ -20,7 +20,8 @@
   },
   "build": {
     "appId": "kr.allywork.messenger",
-    "productName": "Olly Messenger",
+    "productName": "올리 메신저",
+    "executableName": "Olly Messenger",
     "artifactName": "Olly-Messenger-Setup-${version}.${ext}",
     "files": [
       "main.js",
@@ -46,10 +47,13 @@
       "icon": "build/icon.png"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "shortcutName": "올리 메신저",
-      "runAfterFinish": false
+      "runAfterFinish": true,
+      "installerSidebar": "build/sidebar.bmp",
+      "uninstallerSidebar": "build/sidebar.bmp"
     }
   }
 }

@@ -137,3 +137,9 @@ Var pid
   Delete "$DESKTOP\Olly Messenger.lnk"
   ClearErrors
 !macroend
+
+# Assisted installer (oneClick:false): show the standard welcome page first.
+# Text comes from NSIS MUI Korean language file ("... 설치를 시작합니다").
+!macro customWelcomePage
+  !insertmacro MUI_PAGE_WELCOME
+!macroend
