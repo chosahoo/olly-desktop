@@ -461,6 +461,7 @@ ipcMain.on('ally:notify', (_event, payload) => {
   const banner = new Notification({
     title: String(title || '올리 메신저'),
     body: String(body || ''),
+    icon: appIcon(),
   });
   banner.on('click', () => {
     if (!win) return;
@@ -567,9 +568,14 @@ ipcMain.on('ally:badge', (_event, count) => {
 let updater = null;
 const update = { state: 'idle', version: null, percent: 0, manual: false, error: null };
 
+/* 알림에 붙는 큰 마크(256px). 트레이 아이콘(32px)은 알림에 넣으면 흐리다 */
+function appIcon() {
+  return nativeImage.createFromPath(path.join(__dirname, 'assets', 'app.png'));
+}
+
 function notify(title, body, onClick) {
   try {
-    const n = new Notification({ title, body, icon: trayIcon() });
+    const n = new Notification({ title, body, icon: appIcon() });
     if (onClick) n.on('click', onClick);
     n.show();
   } catch {
