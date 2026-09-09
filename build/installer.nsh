@@ -144,11 +144,37 @@ Var pid
   우리 말로 바꾼다. 설치 창의 단추·글꼴은 윈도우 기본이라 여기서는 못 바꾼다.
 
   이 파일은 UTF-8 **BOM** 이어야 한다. NSIS 3 은 BOM 없는 파일을 시스템 코드페이지로
-  읽어서 한글 문구가 깨진다. (patch_nsh.mjs 가 BOM 을 붙인다 — 편집기로 저장할 때 지우지 말 것)
+  읽어서 한글 문구가 깨진다. (patch_nsh*.mjs 가 BOM 을 붙인다 — 편집기로 저장할 때 지우지 말 것)
+
+  ── 왼쪽 그림이 깨지던 것 ──
+  MUI 는 164x314 비트맵 하나를 받아 화면 배율(125·150%…)에 맞춰 **늘인다.** 윈도우의
+  늘이기(StretchBlt)는 부드럽게 안 늘여서 계단이 진다. 원본을 3배로 줘도 마찬가지 —
+  줄일 때도 픽셀을 그냥 버린다(9/9 확인). 그래서 배율마다 **딱 맞는 크기**의 그림을
+  다섯 장 넣어 두고, 화면이 뜰 때 그 PC 의 그림 칸 크기를 재서 맞는 장을 늘이지 않고
+  붙인다. 그림은 build/side-{100,125,150,175,200}.bmp — PowerShell System.Drawing 으로
+  같은 그림을 배율만 달리해 그린 것.
 */
+/*
+  설치 창 글꼴 — 기본은 윈도우 옛 대화상자 글꼴(굴림 계열)이라 한글이 촌스럽다
+  (사장님: "한글 폰트가 완전 구려", 9/9). 맑은 고딕으로. MUI 제목·본문이 다 이걸 따른다.
+*/
+!macro customHeader
+  SetFont "Malgun Gothic" 9
+!macroend
+
+!macro customInit
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\side-100.bmp "${BUILD_RESOURCES_DIR}\side-100.bmp"
+  File /oname=$PLUGINSDIR\side-125.bmp "${BUILD_RESOURCES_DIR}\side-125.bmp"
+  File /oname=$PLUGINSDIR\side-150.bmp "${BUILD_RESOURCES_DIR}\side-150.bmp"
+  File /oname=$PLUGINSDIR\side-175.bmp "${BUILD_RESOURCES_DIR}\side-175.bmp"
+  File /oname=$PLUGINSDIR\side-200.bmp "${BUILD_RESOURCES_DIR}\side-200.bmp"
+!macroend
+
 !macro customWelcomePage
   !define MUI_WELCOMEPAGE_TITLE "올리 메신저를 설치합니다"
   !define MUI_WELCOMEPAGE_TEXT "회사 메신저와 전자결재를 바탕화면에서 바로 씁니다.$\r$\n$\r$\n설치는 1분이 안 걸리고, 끝나면 회사 계정으로 한 번만 로그인하면 됩니다.$\r$\n$\r$\n다음을 눌러 시작하세요."
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW allyWelcomeShow
   !insertmacro MUI_PAGE_WELCOME
 !macroend
 
@@ -167,5 +193,46 @@ Var pid
   !define MUI_FINISHPAGE_RUN
   !define MUI_FINISHPAGE_RUN_FUNCTION "StartApp"
   !define MUI_FINISHPAGE_RUN_TEXT "지금 올리 메신저 열기"
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW allyFinishShow
   !insertmacro MUI_PAGE_FINISH
+
+  ; $0 = 그림 칸(HWND). 칸의 실제 픽셀 크기를 재서 맞는 장을 그대로 붙인다.
+  Function allySideImage
+    System::Call '*(i, i, i, i) p .r1'
+    System::Call 'user32::GetClientRect(p r0, p r1)'
+    System::Call '*$1(i, i, i .r2, i .r3)'
+    System::Free $1
+    StrCpy $4 "$PLUGINSDIR\side-100.bmp"
+    ${If} $2 >= 184
+      StrCpy $4 "$PLUGINSDIR\side-125.bmp"
+    ${EndIf}
+    ${If} $2 >= 225
+      StrCpy $4 "$PLUGINSDIR\side-150.bmp"
+    ${EndIf}
+    ${If} $2 >= 266
+      StrCpy $4 "$PLUGINSDIR\side-175.bmp"
+    ${EndIf}
+    ${If} $2 >= 307
+      StrCpy $4 "$PLUGINSDIR\side-200.bmp"
+    ${EndIf}
+    ; LR_LOADFROMFILE(0x10) — 칸 크기로 읽는다. 크기가 같으면 늘이지 않는다
+    System::Call 'user32::LoadImage(p 0, t r4, i 0, i r2, i r3, i 0x10) p .r5'
+    ${If} $5 <> 0
+      ; STM_SETIMAGE = 0x172, IMAGE_BITMAP = 0. 전 그림은 지운다
+      SendMessage $0 0x172 0 $5 $6
+      ${If} $6 <> 0
+        System::Call 'gdi32::DeleteObject(p r6)'
+      ${EndIf}
+    ${EndIf}
+  FunctionEnd
+
+  Function allyWelcomeShow
+    StrCpy $0 $mui.WelcomePage.Image
+    Call allySideImage
+  FunctionEnd
+
+  Function allyFinishShow
+    StrCpy $0 $mui.FinishPage.Image
+    Call allySideImage
+  FunctionEnd
 !macroend
