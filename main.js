@@ -18,9 +18,21 @@ const fs = require('fs');
   '내 자리' 를 잡아 둔 사람이 매일 다시 끌어야 한다.
 */
 const statePath = () => path.join(app.getPath('userData'), 'window-state.json');
+/*
+  기억한 창 상태에 판 번호를 붙인다.
+
+  0.1.1 의 기본 크기는 960x720 이었다. 그 판을 깐 PC 는 창을 한 번도 안
+  만졌어도 그 크기가 기억돼 있다(옮기거나 닫을 때 저장하니까). 0.1.4 에서
+  기본을 380x600 으로 줄였는데, 옛 기억이 남은 PC 에서는 새 판도 960x720 으로
+  떴다 — 사장님 PC 가 그랬다(9/9). 옛 판이 남긴 기억은 버리고 새 기본으로 뜬다.
+  사람이 새 판에서 다시 옮기거나 늘이면 그때부터 다시 기억한다.
+*/
+const STATE_VERSION = 2;
 function loadWindowState() {
   try {
-    return JSON.parse(fs.readFileSync(statePath(), 'utf8'));
+    const state = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
+    if (!state || state.v !== STATE_VERSION) return null;
+    return state;
   } catch {
     return null;
   }
@@ -28,7 +40,7 @@ function loadWindowState() {
 function saveWindowState() {
   if (!win || win.isDestroyed()) return;
   try {
-    fs.writeFileSync(statePath(), JSON.stringify(win.getBounds()));
+    fs.writeFileSync(statePath(), JSON.stringify({ ...win.getBounds(), v: STATE_VERSION }));
   } catch {
     /* 상태 저장 실패로 앱이 흔들리면 안 된다 */
   }
