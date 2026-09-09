@@ -275,3 +275,35 @@ electron-builder 의 oneClick 설치는 끝나자마자 앱을 띄운다(`runAft
 0.1.1(9/2) 이후 릴리스를 안 올려서 여기서 고친 것들이 아무에게도 안 갔다.
 새 판은 `GH_TOKEN` 을 두고 `npm run release` 하거나, 깃허브에서 릴리스를 만들어
 dist/ 의 exe 를 올린다.
+
+## 보통 설치 화면으로 (2026-09-09, 0.1.9)
+
+"다음다음이 없네, 완료됐다는 말이 있어야지." 원클릭(oneClick)은 창 하나가 잠깐 떴다
+사라진다. 안내형으로 바꿨다.
+
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "installerSidebar": "build/sidebar.bmp",
+      "uninstallerSidebar": "build/sidebar.bmp"
+    }
+    "productName": "올리 메신저",
+    "executableName": "Olly Messenger"
+
+화면 순서: 시작(customWelcomePage, installer.nsh) → 사용자 선택(모든 사용자/전용) →
+설치 위치 → 설치 → '올리 메신저 설치 완료 · 마침'. 마침 화면의 '실행하기' 가 켜져 있어
+그때 앱이 뜨고 로그인한다. 설치 중엔 아무것도 안 묻는다.
+
+- productName 을 한글로 해야 설치 화면 문구가 '올리 메신저' 가 된다. exe 는
+  executableName 으로 'Olly Messenger.exe' 그대로(경로·taskkill 안전).
+- 왼쪽 그림은 164x314 24bit BMP. PowerShell System.Drawing 으로 그렸다(초록 바탕 +
+  public/icon.png + '올리 메신저 / 회사 메신저 · 전자결재').
+- **설치 경로가 한 단 깊어졌다**: `%LOCALAPPDATA%\Programs\ally-desktop\Olly Messenger\`.
+  allowToChangeInstallationDirectory 가 켜지면 electron-builder 가 경로에 앱 이름
+  폴더가 없으면 붙인다(instFilesPre). 기본 폴더(name=ally-desktop)에 'Olly Messenger' 가
+  없어서 붙는다. 이전 판은 설치 프로그램이 먼저 지우니 겹치지 않는다. 지원할 때 이 경로다.
+- 갓 만든 exe 는 Smart App Control 이 처음 한 번 막는다 — 1분쯤 뒤 다시 돌리면 된다.
+
+릴리스는 이 PC 의 git 저장 로그인으로 API 를 불러 올린다(exe·blockmap·latest.yml).
+홈페이지 다운로드 라우트가 5분 캐시라 올린 뒤 5분 지나야 새 판을 준다.
