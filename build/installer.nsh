@@ -1,4 +1,4 @@
-/*
+﻿/*
   설치할 때 "실행 중입니다. OK 를 누르면 종료됩니다" 를 안 띄운다.
 
   왜 —
@@ -138,8 +138,34 @@ Var pid
   ClearErrors
 !macroend
 
-# Assisted installer (oneClick:false): show the standard welcome page first.
-# Text comes from NSIS MUI Korean language file ("... 설치를 시작합니다").
+/*
+  안내형 설치 화면의 문구 — NSIS 기본 안내문은 "재부팅을 하지 않고서도 시스템
+  파일을 수정할 수 있게 해줍니다" 같은 남의 말이다 (사장님: "설치 화면이 너무…", 9/9).
+  우리 말로 바꾼다. 설치 창의 단추·글꼴은 윈도우 기본이라 여기서는 못 바꾼다.
+
+  이 파일은 UTF-8 **BOM** 이어야 한다. NSIS 3 은 BOM 없는 파일을 시스템 코드페이지로
+  읽어서 한글 문구가 깨진다. (patch_nsh.mjs 가 BOM 을 붙인다 — 편집기로 저장할 때 지우지 말 것)
+*/
 !macro customWelcomePage
+  !define MUI_WELCOMEPAGE_TITLE "올리 메신저를 설치합니다"
+  !define MUI_WELCOMEPAGE_TEXT "회사 메신저와 전자결재를 바탕화면에서 바로 씁니다.$\r$\n$\r$\n설치는 1분이 안 걸리고, 끝나면 회사 계정으로 한 번만 로그인하면 됩니다.$\r$\n$\r$\n다음을 눌러 시작하세요."
   !insertmacro MUI_PAGE_WELCOME
+!macroend
+
+!macro customFinishPage
+  Function StartApp
+    ${if} ${isUpdated}
+      StrCpy $1 "--updated"
+    ${else}
+      StrCpy $1 ""
+    ${endif}
+    ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$1"
+  FunctionEnd
+
+  !define MUI_FINISHPAGE_TITLE "설치가 끝났습니다"
+  !define MUI_FINISHPAGE_TEXT "올리 메신저가 준비됐습니다.$\r$\n$\r$\n처음 열 때 회사 계정으로 로그인하면, 다음부터는 묻지 않습니다."
+  !define MUI_FINISHPAGE_RUN
+  !define MUI_FINISHPAGE_RUN_FUNCTION "StartApp"
+  !define MUI_FINISHPAGE_RUN_TEXT "지금 올리 메신저 열기"
+  !insertmacro MUI_PAGE_FINISH
 !macroend
