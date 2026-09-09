@@ -28,6 +28,28 @@ const statePath = () => path.join(app.getPath('userData'), 'window-state.json');
   사람이 새 판에서 다시 옮기거나 늘이면 그때부터 다시 기억한다.
 */
 const STATE_VERSION = 2;
+
+/*
+  프로그램 설정 — 이 PC 의 것. 계정 설정(알림·대화·자리비움)은 웹이 서버에 둔다.
+  지금은 '켤 때 창 숨기고 트레이로만' 하나.
+*/
+const prefsPath = () => path.join(app.getPath('userData'), 'prefs.json');
+function loadPrefs() {
+  try {
+    return JSON.parse(fs.readFileSync(prefsPath(), 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+function savePrefs(patch) {
+  const next = { ...loadPrefs(), ...patch };
+  try {
+    fs.writeFileSync(prefsPath(), JSON.stringify(next));
+  } catch {
+    /* 설정 저장 실패로 앱이 흔들리면 안 된다 */
+  }
+  return next;
+}
 function loadWindowState() {
   try {
     const state = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
@@ -170,6 +192,8 @@ function createWindow() {
     minHeight: 480,
     title: '올리 메신저',
     autoHideMenuBar: true,
+    // 그릴 준비가 되면 보인다 — '켤 때 트레이로만' 이면 안 보이고 트레이에만 앉는다
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -236,6 +260,15 @@ function createWindow() {
   });
 
   win.loadURL(APP_URL);
+  win.once('ready-to-show', () => {
+    /*
+      켤 때 트레이로만 — 윈도우 시작과 함께 뜨는 회사 메신저가 매번 창부터
+      들이밀면 성가시다. 설정에서 끄고 켠다(기본 꺼짐 = 창을 보여 준다).
+      사람이 직접 실행했을 때(두 번째 실행)는 second-instance 가 창을 올린다.
+    */
+    if (loadPrefs().hideOnStart === true) return;
+    win.show();
+  });
 
   /*
     닫기 = 숨기기. 회사 메신저는 꺼지면 안 된다 — 트레이/독에 남아
@@ -456,6 +489,43 @@ ipcMain.on('ally:open-external', (_event, url) => {
   shell.openExternal(target);
 });
 
+/*
+  메신저 설정 화면(웹)이 묻고 바꾸는 것들 — 이 PC 의 프로그램 값.
+  모두 우리 창에서 온 요청만 받는다(fromOurWindow).
+*/
+ipcMain.handle('ally:get-info', (event) => {
+  if (!fromOurWindow(event)) return null;
+  return {
+    version: app.getVersion(),
+    openAtLogin: app.getLoginItemSettings().openAtLogin === true,
+    hideOnStart: loadPrefs().hideOnStart === true,
+    update: updateInfo(),
+    canUpdate: Boolean(updater),
+  };
+});
+ipcMain.handle('ally:set-open-at-login', (event, on) => {
+  if (!fromOurWindow(event)) return false;
+  app.setLoginItemSettings({ openAtLogin: Boolean(on) });
+  if (tray && tray.rebuild) tray.rebuild();
+  return app.getLoginItemSettings().openAtLogin === true;
+});
+ipcMain.handle('ally:set-hide-on-start', (event, on) => {
+  if (!fromOurWindow(event)) return false;
+  return savePrefs({ hideOnStart: Boolean(on) }).hideOnStart === true;
+});
+ipcMain.handle('ally:check-updates', (event) => {
+  if (!fromOurWindow(event)) return null;
+  checkForUpdates(true);
+  return updateInfo();
+});
+ipcMain.handle('ally:install-update', (event) => {
+  if (!fromOurWindow(event)) return false;
+  if (!updater || update.state !== 'downloaded') return false;
+  quitting = true;
+  updater.quitAndInstall(true, true);
+  return true;
+});
+
 /* 웹(preload 다리)이 보내는 안 읽은 수 → 독 뱃지·트레이 */
 ipcMain.on('ally:badge', (_event, count) => {
   if (!fromOurWindow(_event)) return;
@@ -542,6 +612,24 @@ function updateMenuItems() {
 function setUpdate(patch) {
   Object.assign(update, patch);
   if (tray && tray.rebuild) tray.rebuild();
+  if (win && !win.isDestroyed()) {
+    try {
+      win.webContents.send('ally:update-state', updateInfo());
+    } catch {
+      /* 창이 막 닫히는 중이면 건너뛴다 */
+    }
+  }
+}
+
+/** 웹 설정 화면에 보내는 모양 */
+function updateInfo() {
+  return {
+    state: update.state,
+    version: update.version,
+    percent: update.percent,
+    error: update.error,
+    current: app.getVersion(),
+  };
 }
 
 function checkForUpdates(manual) {
