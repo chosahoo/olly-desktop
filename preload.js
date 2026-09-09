@@ -15,12 +15,7 @@ contextBridge.exposeInMainWorld('allyDesktop', {
       body: String(payload?.body || ''),
       roomId: String(payload?.roomId || ''),
     }),
-  /*
-    우리 주소를 기본 브라우저로 연다 — 메신저의 게시판·결재 단추가 쓴다.
-    주소만 넘기고 판단은 main 이 한다(우리 origin 이 아니면 버린다).
-    다리를 넓히는 셈이라 남의 주소는 main 이 반드시 막아야 한다.
-  */
-  openExternal: (url) => ipcRenderer.send('ally:open-external', String(url || '')),
+  // 9/10 — openExternal 은 뺐다. 메신저 창은 메신저만 연다
   /*
     메신저 설정 화면(웹 /messages › 설정)이 쓰는 것들 (9/9).
     이 PC 의 프로그램에 속한 값 — 자동 실행·트레이로 시작·업데이트·판 번호.
@@ -29,6 +24,7 @@ contextBridge.exposeInMainWorld('allyDesktop', {
   getInfo: () => ipcRenderer.invoke('ally:get-info'),
   setOpenAtLogin: (on) => ipcRenderer.invoke('ally:set-open-at-login', Boolean(on)),
   setHideOnStart: (on) => ipcRenderer.invoke('ally:set-hide-on-start', Boolean(on)),
+  setAutoLogoutDays: (days) => ipcRenderer.invoke('ally:set-auto-logout-days', Number(days)),
   checkForUpdates: () => ipcRenderer.invoke('ally:check-updates'),
   installUpdate: () => ipcRenderer.invoke('ally:install-update'),
 });

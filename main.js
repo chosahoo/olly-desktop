@@ -81,6 +81,26 @@ const APP_URL = app.isPackaged ? DEFAULT_URL : process.env.ALLY_URL || DEFAULT_U
 const APP_ORIGIN = new URL(APP_URL).origin;
 
 /*
+  메신저 창에서는 **메신저만** 연다 (9/10, 사장님 결정).
+
+  전에는 우리 origin 이면 어디든 갔고, 게시판·결재 단추가 브라우저를 열었다.
+  그 길이 곧 웹 로그인과 이어지는 길이다 — 메신저 창의 세션으로 회사 관리
+  화면까지 닿을 수 있으면 매장 공용 PC 에서 위험하다. 그래서 메신저 화면과
+  로그인 화면 말고는 우리 주소라도 막는다. 남의 주소(대화 속 링크)는 전처럼
+  기본 브라우저로 보낸다 — 그건 우리 세션과 무관하다.
+*/
+const MESSENGER_PATHS = ['/messages', '/auth/'];
+function isMessengerPath(url) {
+  if (!isOurs(url)) return false;
+  try {
+    const { pathname } = new URL(url);
+    return MESSENGER_PATHS.some((p) => pathname === p || pathname.startsWith(p));
+  } catch {
+    return false;
+  }
+}
+
+/*
   우리 주소인가.
 
   **앞글자 비교(startsWith)로 보면 안 된다.** APP_ORIGIN 이
@@ -316,11 +336,17 @@ function createWindow() {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
+    // 우리 주소인데 메신저가 아니다 — 열지 않는다(브라우저로도 안 보낸다)
+    if (isOurs(url) && !isMessengerPath(url)) return { action: 'deny' };
     if (isOurs(url)) return { action: 'allow' };
     shell.openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
+    if (isOurs(url) && !isMessengerPath(url)) {
+      event.preventDefault(); // 메신저 밖 우리 화면 — 막는다
+      return;
+    }
     if (!isOurs(url)) {
       event.preventDefault();
       shell.openExternal(url);
@@ -331,9 +357,29 @@ function createWindow() {
     우리 주소로 들어갔다가 30x 로 남의 주소로 넘어가면 그건 안 잡힌다.
   */
   win.webContents.on('will-redirect', (event, url) => {
+    if (isOurs(url) && !isMessengerPath(url)) {
+      event.preventDefault();
+      win.loadURL(APP_URL); // 메신저로 되돌린다
+      return;
+    }
     if (!isOurs(url)) {
       event.preventDefault();
       shell.openExternal(url);
+    }
+  });
+
+  /*
+    자동 로그아웃 주기 — 로그인한 지 n일이 지나면 세션을 지우고 로그인 화면으로 (9/10).
+    로그인 시각은 로그인 화면 다음에 메신저가 열린 순간으로 잡는다.
+  */
+  win.webContents.on('did-navigate', (_event, url) => {
+    try {
+      const { pathname } = new URL(url);
+      if (pathname.startsWith('/messages') && !loadPrefs().loginAt) {
+        savePrefs({ loginAt: Date.now() });
+      }
+    } catch {
+      /* 주소가 이상하면 그냥 둔다 */
     }
   });
 }
@@ -353,6 +399,41 @@ function unreadOverlay() {
     );
   }
   return overlayCache;
+}
+
+/** 세션을 지우고 로그인 화면으로. show 면 창도 앞으로 */
+async function logoutSession(show) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    await win.webContents.session.clearStorageData({
+      storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers'],
+    });
+  } catch {
+    /* 지우다 실패해도 다시 열기는 한다 */
+  }
+  savePrefs({ loginAt: null });
+  unread = 0;
+  if (tray && tray.rebuild) tray.rebuild();
+  if (process.platform === 'win32') win.setOverlayIcon(null, '');
+  if (process.platform === 'darwin') app.setBadgeCount(0);
+  win.loadURL(APP_URL);
+  if (show) {
+    win.show();
+    win.focus();
+  }
+}
+
+const AUTO_LOGOUT_DAYS = [1, 7, 30];
+const DEFAULT_AUTO_LOGOUT_DAYS = 7;
+function autoLogoutDays() {
+  const v = Number(loadPrefs().autoLogoutDays);
+  return AUTO_LOGOUT_DAYS.includes(v) ? v : DEFAULT_AUTO_LOGOUT_DAYS;
+}
+/** 로그인한 지 주기를 넘겼으면 로그아웃. 켤 때와 한 시간마다 */
+function enforceAutoLogout() {
+  const at = Number(loadPrefs().loginAt);
+  if (!at) return;
+  if (Date.now() - at > autoLogoutDays() * 24 * 60 * 60 * 1000) logoutSession(false);
 }
 
 function createTray() {
@@ -401,23 +482,7 @@ function createTray() {
             그대로 본다. 매장 공용 PC 면 더 그렇다.
           */
           label: '로그아웃',
-          click: async () => {
-            if (!win || win.isDestroyed()) return;
-            try {
-              await win.webContents.session.clearStorageData({
-                storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers'],
-              });
-            } catch {
-              /* 지우다 실패해도 다시 열기는 한다 */
-            }
-            unread = 0;
-            if (tray && tray.rebuild) tray.rebuild();
-            if (process.platform === 'win32') win.setOverlayIcon(null, '');
-            if (process.platform === 'darwin') app.setBadgeCount(0);
-            win.loadURL(APP_URL);
-            win.show();
-            win.focus();
-          },
+          click: () => logoutSession(true),
         },
         { type: 'separator' },
         {
@@ -483,12 +548,7 @@ ipcMain.on('ally:notify', (_event, payload) => {
   주소를 밀어 넣어도 여기서 버린다 — 링크 처리(setWindowOpenHandler)와
   같은 isOurs 잣대다.
 */
-ipcMain.on('ally:open-external', (_event, url) => {
-  if (!fromOurWindow(_event)) return;
-  const target = String(url || '');
-  if (!isOurs(target)) return;
-  shell.openExternal(target);
-});
+/* 9/10 — 'ally:open-external' 은 뺐다. 메신저 창은 메신저만 연다 */
 
 /*
   메신저 설정 화면(웹)이 묻고 바꾸는 것들 — 이 PC 의 프로그램 값.
@@ -500,6 +560,7 @@ ipcMain.handle('ally:get-info', (event) => {
     version: app.getVersion(),
     openAtLogin: app.getLoginItemSettings().openAtLogin === true,
     hideOnStart: loadPrefs().hideOnStart === true,
+    autoLogoutDays: autoLogoutDays(),
     update: updateInfo(),
     canUpdate: Boolean(updater),
   };
@@ -509,6 +570,14 @@ ipcMain.handle('ally:set-open-at-login', (event, on) => {
   app.setLoginItemSettings({ openAtLogin: Boolean(on) });
   if (tray && tray.rebuild) tray.rebuild();
   return app.getLoginItemSettings().openAtLogin === true;
+});
+ipcMain.handle('ally:set-auto-logout-days', (event, days) => {
+  if (!fromOurWindow(event)) return null;
+  const v = Number(days);
+  if (!AUTO_LOGOUT_DAYS.includes(v)) return autoLogoutDays();
+  savePrefs({ autoLogoutDays: v });
+  enforceAutoLogout();
+  return v;
 });
 ipcMain.handle('ally:set-hide-on-start', (event, on) => {
   if (!fromOurWindow(event)) return false;
@@ -694,6 +763,8 @@ function setupAutoUpdate() {
 
     checkForUpdates(false);
     setInterval(() => checkForUpdates(false), 4 * 60 * 60 * 1000);
+    enforceAutoLogout();
+    setInterval(enforceAutoLogout, 60 * 60 * 1000);
   } catch {
     /* 업데이트 확인 실패는 메신저 동작과 무관 */
   }

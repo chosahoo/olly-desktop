@@ -1,7 +1,7 @@
 {
   "name": "ally-desktop",
   "productName": "올리 메신저",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "올리(Ally) 설치형 메신저 — Windows",
   "main": "main.js",
   "author": "Ally <official@allywork.kr>",
