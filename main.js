@@ -333,6 +333,13 @@ function createTray() {
           enabled: false,
         },
         { type: 'separator' },
+        /*
+          업데이트 — 사람이 누를 자리 (9/9, 사장님: "프로그램 안에서 업데이트 누르면 되나").
+          켤 때와 4시간마다 알아서 확인하지만, 다 받은 판은 **종료할 때** 갈아끼운다.
+          회사 메신저는 종료를 안 하니 여기서 바로 설치하고 다시 켤 수 있어야 한다.
+        */
+        ...updateMenuItems(),
+        { type: 'separator' },
         {
           label: '열기',
           click: () => {
@@ -482,15 +489,117 @@ ipcMain.on('ally:badge', (_event, count) => {
 
   Windows 만 — macOS 자동 업데이트는 서명(공증)된 앱에서만 동작해서,
   지금은 조용히 건너뛴다.
+
+  상태는 트레이 메뉴에 그린다(updateMenuItems). 사람이 '업데이트 확인' 을 누르면
+  결과를 알림으로도 말해 준다 — 메뉴를 다시 열어 보게 하지 않는다.
+  다 받으면 '지금 설치하고 다시 시작' 이 생긴다(quitAndInstall).
 */
+let updater = null;
+const update = { state: 'idle', version: null, percent: 0, manual: false, error: null };
+
+function notify(title, body, onClick) {
+  try {
+    const n = new Notification({ title, body, icon: trayIcon() });
+    if (onClick) n.on('click', onClick);
+    n.show();
+  } catch {
+    /* 알림 못 띄워도 동작엔 지장 없다 */
+  }
+}
+
+function updateMenuItems() {
+  const v = app.getVersion();
+  const items = [];
+  switch (update.state) {
+    case 'checking':
+      items.push({ label: `업데이트 확인 중… (지금 ${v})`, enabled: false });
+      break;
+    case 'downloading':
+      items.push({ label: `새 판 ${update.version} 받는 중 ${update.percent}%`, enabled: false });
+      break;
+    case 'downloaded':
+      items.push({
+        label: `새 판 ${update.version} 지금 설치하고 다시 시작`,
+        click: () => {
+          quitting = true;
+          updater.quitAndInstall(true, true);
+        },
+      });
+      break;
+    case 'latest':
+      items.push({ label: `최신 판입니다 (${v})`, enabled: false });
+      items.push({ label: '업데이트 확인', click: () => checkForUpdates(true) });
+      break;
+    case 'error':
+      items.push({ label: '업데이트 확인 실패 — 다시 시도', click: () => checkForUpdates(true) });
+      break;
+    default:
+      items.push({ label: `업데이트 확인 (지금 ${v})`, click: () => checkForUpdates(true) });
+  }
+  return items;
+}
+
+function setUpdate(patch) {
+  Object.assign(update, patch);
+  if (tray && tray.rebuild) tray.rebuild();
+}
+
+function checkForUpdates(manual) {
+  if (!updater) {
+    if (manual) notify('업데이트', '이 판에서는 자동 업데이트를 쓸 수 없습니다.');
+    return;
+  }
+  if (update.state === 'checking' || update.state === 'downloading') return;
+  if (update.state === 'downloaded') {
+    if (manual) notify('업데이트', `새 판 ${update.version}이 준비돼 있습니다. 트레이 메뉴에서 설치하세요.`);
+    return;
+  }
+  setUpdate({ state: 'checking', manual: Boolean(manual), error: null });
+  updater.checkForUpdates().catch((e) => {
+    setUpdate({ state: 'error', error: String(e && e.message ? e.message : e) });
+    if (manual) notify('업데이트 확인 실패', '인터넷 연결을 확인하고 다시 시도해 주세요.');
+  });
+}
+
 function setupAutoUpdate() {
   if (!app.isPackaged || process.platform !== 'win32') return;
   try {
     const { autoUpdater } = require('electron-updater');
+    updater = autoUpdater;
     autoUpdater.autoDownload = true;
-    const check = () => autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-    check();
-    setInterval(check, 4 * 60 * 60 * 1000);
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info) => {
+      setUpdate({ state: 'downloading', version: info.version, percent: 0 });
+    });
+    autoUpdater.on('update-not-available', () => {
+      const manual = update.manual;
+      setUpdate({ state: 'latest', manual: false });
+      if (manual) notify('최신 판입니다', `올리 메신저 ${app.getVersion()} — 지금이 최신입니다.`);
+    });
+    autoUpdater.on('download-progress', (p) => {
+      setUpdate({ percent: Math.round(p.percent || 0) });
+    });
+    autoUpdater.on('update-downloaded', (info) => {
+      setUpdate({ state: 'downloaded', version: info.version, percent: 100, manual: false });
+      // 누르면 바로 설치. 안 누르면 종료할 때 알아서 갈아끼운다
+      notify(
+        `올리 메신저 ${info.version} 준비됨`,
+        '눌러서 지금 설치하거나, 다음에 켤 때 새 판으로 열립니다.',
+        () => {
+          quitting = true;
+          autoUpdater.quitAndInstall(true, true);
+        }
+      );
+    });
+    autoUpdater.on('error', (e) => {
+      const manual = update.manual;
+      setUpdate({ state: 'error', manual: false, error: String(e && e.message ? e.message : e) });
+      if (manual) notify('업데이트 확인 실패', '인터넷 연결을 확인하고 다시 시도해 주세요.');
+    });
+
+    checkForUpdates(false);
+    setInterval(() => checkForUpdates(false), 4 * 60 * 60 * 1000);
   } catch {
     /* 업데이트 확인 실패는 메신저 동작과 무관 */
   }
