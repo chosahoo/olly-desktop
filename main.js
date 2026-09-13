@@ -768,6 +768,37 @@ function setupAutoUpdate() {
   }
 }
 
+/*
+  개발 통로 — 사장님(9/13): "너만 들어갈 수 있는 통로를 만들면 되잖아,
+  나한테 로그인해달라고 안 하게." 화면엔 아무것도 없다.
+  userData 의 dev-session.json { token, email } 이 있을 때만, 서버의
+  /api/dev/session 에 토큰을 보내 세션 쿠키를 받고 메신저를 다시 연다.
+  토큰은 서버에 해시로만 있고 테스트회사에 묶여 있어 실사용 회사 계정은 못 연다.
+  파일이 없으면(모든 사용자 PC) 이 함수는 아무것도 하지 않는다.
+*/
+const devSessionPath = () => path.join(app.getPath('userData'), 'dev-session.json');
+async function applyDevSession() {
+  let cfg = null;
+  try {
+    cfg = JSON.parse(fs.readFileSync(devSessionPath(), 'utf-8'));
+  } catch {
+    return; // 파일 없음 = 보통 사용자
+  }
+  if (!win || !cfg || typeof cfg.token !== 'string' || typeof cfg.email !== 'string') return;
+  try {
+    const res = await win.webContents.session.fetch(`${APP_ORIGIN}/api/dev/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-dev-token': cfg.token },
+      body: JSON.stringify({ email: cfg.email }),
+      credentials: 'include',
+    });
+    if (res.ok) win.loadURL(APP_URL);
+    else console.warn('[dev-session]', res.status);
+  } catch (err) {
+    console.warn('[dev-session]', err && err.message);
+  }
+}
+
 app.whenReady().then(() => {
   setupAutoUpdate();
   /*
@@ -786,6 +817,7 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
+  applyDevSession(); // 개발 PC 에만 있는 파일이 있을 때만 — 위 주석 참고
 
   /*
     자동 로그아웃 — 창을 만든 뒤에 본다(로그아웃은 창의 세션을 지운다).
