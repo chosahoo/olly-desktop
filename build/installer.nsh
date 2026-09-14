@@ -172,8 +172,9 @@ Var pid
 !macroend
 
 !macro customWelcomePage
-  !define MUI_WELCOMEPAGE_TITLE "올리 메신저를 설치합니다"
-  !define MUI_WELCOMEPAGE_TEXT "회사 메신저와 전자결재를 바탕화면에서 바로 씁니다.$\r$\n$\r$\n설치는 1분이 안 걸리고, 끝나면 회사 계정으로 한 번만 로그인하면 됩니다.$\r$\n$\r$\n다음을 눌러 시작하세요."
+  !define MUI_WELCOMEPAGE_TITLE "올리 메신저 설치"
+  !define MUI_WELCOMEPAGE_TEXT "사내 메신저 올리를 설치합니다.$\r$\n$\r$\n설치를 마치면 회사 계정으로 로그인하여 바로 사용할 수 있습니다.$\r$\n$\r$\n[다음]을 눌러 진행하세요."
+
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW allyWelcomeShow
   !insertmacro MUI_PAGE_WELCOME
 !macroend
