@@ -111,6 +111,21 @@ function isMessengerPath(url) {
   창을 만들기 전에 정해 둔다 — did-fail-load 처리기가 이보다 먼저
   등록되는데, 안쪽에 두면 나중에 순서를 건드릴 때 TDZ 로 터진다.
 */
+/*
+  바깥 링크를 운영체제로 넘길 때는 **웹 주소·메일·전화만** (2026-09-30).
+  shell.openExternal 은 주소를 운영체제 기본 처리기에 그대로 넘긴다 — file: 이나 윈도우의
+  특수 프로토콜이 섞이면 PC 의 프로그램이 뜰 수 있다(Electron 보안 지침).
+  메신저 링크는 사람이 쓴 글에서 오므로 여기서 거른다.
+*/
+const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+function openExternalSafely(url) {
+  try {
+    if (EXTERNAL_PROTOCOLS.has(new URL(url).protocol)) shell.openExternal(url);
+  } catch {
+    /* 못 읽는 주소는 열지 않는다 */
+  }
+}
+
 const isOurs = (url) => {
   try {
     return new URL(url).origin === APP_ORIGIN;
@@ -339,7 +354,7 @@ function createWindow() {
     // 우리 주소인데 메신저가 아니다 — 열지 않는다(브라우저로도 안 보낸다)
     if (isOurs(url) && !isMessengerPath(url)) return { action: 'deny' };
     if (isOurs(url)) return { action: 'allow' };
-    shell.openExternal(url);
+    openExternalSafely(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
@@ -349,7 +364,7 @@ function createWindow() {
     }
     if (!isOurs(url)) {
       event.preventDefault();
-      shell.openExternal(url);
+      openExternalSafely(url);
     }
   });
   /*
@@ -364,7 +379,7 @@ function createWindow() {
     }
     if (!isOurs(url)) {
       event.preventDefault();
-      shell.openExternal(url);
+      openExternalSafely(url);
     }
   });
 
