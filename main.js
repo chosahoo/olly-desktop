@@ -274,7 +274,7 @@ function createWindow() {
       </style>
       <div class="box">
         <h1>연결하지 못했습니다</h1>
-        <p>인터넷이 아직 안 붙었을 수 있습니다.<br>잠시 뒤 다시 시도해 주세요.</p>
+        <p>인터넷 연결을 확인한 뒤<br>다시 시도해 주세요.</p>
         <button onclick="location.replace('${APP_URL}')">다시 시도</button>
       </div>`;
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
@@ -672,14 +672,14 @@ function updateMenuItems() {
   const items = [];
   switch (update.state) {
     case 'checking':
-      items.push({ label: `업데이트 확인 중… (지금 ${v})`, enabled: false });
+      items.push({ label: `업데이트 확인 중 (현재 ${v})`, enabled: false });
       break;
     case 'downloading':
-      items.push({ label: `새 판 ${update.version} 받는 중 ${update.percent}%`, enabled: false });
+      items.push({ label: `새 버전 ${update.version} 받는 중 ${update.percent}%`, enabled: false });
       break;
     case 'downloaded':
       items.push({
-        label: `새 판 ${update.version} 지금 설치하고 다시 시작`,
+        label: `새 버전 ${update.version} 설치하고 다시 시작`,
         click: () => {
           quitting = true;
           updater.quitAndInstall(true, true);
@@ -687,14 +687,14 @@ function updateMenuItems() {
       });
       break;
     case 'latest':
-      items.push({ label: `최신 판입니다 (${v})`, enabled: false });
+      items.push({ label: `최신 버전입니다 (${v})`, enabled: false });
       items.push({ label: '업데이트 확인', click: () => checkForUpdates(true) });
       break;
     case 'error':
       items.push({ label: '업데이트 확인 실패 — 다시 시도', click: () => checkForUpdates(true) });
       break;
     default:
-      items.push({ label: `업데이트 확인 (지금 ${v})`, click: () => checkForUpdates(true) });
+      items.push({ label: `업데이트 확인 (현재 ${v})`, click: () => checkForUpdates(true) });
   }
   return items;
 }
@@ -724,12 +724,12 @@ function updateInfo() {
 
 function checkForUpdates(manual) {
   if (!updater) {
-    if (manual) notify('업데이트', '이 판에서는 자동 업데이트를 쓸 수 없습니다.');
+    if (manual) notify('업데이트', '이 버전은 자동 업데이트를 지원하지 않습니다.');
     return;
   }
   if (update.state === 'checking' || update.state === 'downloading') return;
   if (update.state === 'downloaded') {
-    if (manual) notify('업데이트', `새 판 ${update.version}이 준비돼 있습니다. 트레이 메뉴에서 설치하세요.`);
+    if (manual) notify('업데이트', `새 버전 ${update.version} 준비됨 — 트레이 메뉴에서 설치합니다.`);
     return;
   }
   setUpdate({ state: 'checking', manual: Boolean(manual), error: null });
@@ -753,7 +753,7 @@ function setupAutoUpdate() {
     autoUpdater.on('update-not-available', () => {
       const manual = update.manual;
       setUpdate({ state: 'latest', manual: false });
-      if (manual) notify('최신 판입니다', `올리 메신저 ${app.getVersion()} — 지금이 최신입니다.`);
+      if (manual) notify('최신 버전입니다', `올리 메신저 ${app.getVersion()}`);
     });
     autoUpdater.on('download-progress', (p) => {
       setUpdate({ percent: Math.round(p.percent || 0) });
@@ -763,7 +763,7 @@ function setupAutoUpdate() {
       // 누르면 바로 설치. 안 누르면 종료할 때 알아서 갈아끼운다
       notify(
         `올리 메신저 ${info.version} 준비됨`,
-        '눌러서 지금 설치하거나, 다음에 켤 때 새 판으로 열립니다.',
+        '눌러서 지금 설치합니다. 그대로 두면 다음 실행 때 바뀝니다.',
         () => {
           quitting = true;
           autoUpdater.quitAndInstall(true, true);
