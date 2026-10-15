@@ -86,8 +86,14 @@ const APP_ORIGIN = new URL(APP_URL).origin;
   전에는 우리 origin 이면 어디든 갔고, 게시판·결재 단추가 브라우저를 열었다.
   그 길이 곧 웹 로그인과 이어지는 길이다 — 메신저 창의 세션으로 회사 관리
   화면까지 닿을 수 있으면 매장 공용 PC 에서 위험하다. 그래서 메신저 화면과
-  로그인 화면 말고는 우리 주소라도 막는다. 남의 주소(대화 속 링크)는 전처럼
-  기본 브라우저로 보낸다 — 그건 우리 세션과 무관하다.
+  로그인 화면 말고는 우리 주소라도 **이 창에서는** 열지 않는다.
+
+  다만 막기만 하니 대화에 인용한 기안 카드를 눌러도 아무 일이 없었다 —
+  사람은 고장으로 본다(10/15 점검). 그래서 우리 주소의 메신저 밖 화면은
+  **기본 브라우저로** 넘긴다(openOursInBrowser). 브라우저는 이 창과 세션
+  (쿠키)을 나누지 않으니, 메신저 세션이 회사 화면으로 새는 길은 여전히 없다 —
+  브라우저에서 따로 로그인해야 열린다. 남의 주소(대화 속 링크)는 전처럼
+  기본 브라우저로 보낸다.
 */
 const MESSENGER_PATHS = ['/messages', '/auth/'];
 function isMessengerPath(url) {
@@ -121,6 +127,22 @@ const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
 function openExternalSafely(url) {
   try {
     if (EXTERNAL_PROTOCOLS.has(new URL(url).protocol)) shell.openExternal(url);
+  } catch {
+    /* 못 읽는 주소는 열지 않는다 */
+  }
+}
+
+/*
+  우리 주소 중 메신저 밖 화면(기안·게시판 등) → 기본 브라우저 (10/15).
+  **우리 origin 만** 받는다 — https/http 이고 origin 이 통째로 같아야 한다.
+  남의 주소는 openExternalSafely 가 맡는다.
+*/
+function openOursInBrowser(url) {
+  try {
+    const u = new URL(url);
+    if (u.origin !== APP_ORIGIN) return;
+    // 운영체제로 넘기는 자리는 한 곳(openExternalSafely)만 — 프로토콜 거름도 거기서
+    openExternalSafely(u.toString());
   } catch {
     /* 못 읽는 주소는 열지 않는다 */
   }
@@ -351,15 +373,20 @@ function createWindow() {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    // 우리 주소인데 메신저가 아니다 — 열지 않는다(브라우저로도 안 보낸다)
-    if (isOurs(url) && !isMessengerPath(url)) return { action: 'deny' };
+    // 우리 주소인데 메신저가 아니다 — 이 창에는 안 열고 기본 브라우저로
+    if (isOurs(url) && !isMessengerPath(url)) {
+      openOursInBrowser(url);
+      return { action: 'deny' };
+    }
     if (isOurs(url)) return { action: 'allow' };
     openExternalSafely(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
     if (isOurs(url) && !isMessengerPath(url)) {
-      event.preventDefault(); // 메신저 밖 우리 화면 — 막는다
+      // 메신저 밖 우리 화면(기안 인용 카드 등) — 이 창은 그대로, 기본 브라우저로 연다
+      event.preventDefault();
+      openOursInBrowser(url);
       return;
     }
     if (!isOurs(url)) {
@@ -814,14 +841,70 @@ async function applyDevSession() {
   }
 }
 
+/*
+  프로그램 메뉴 (10/15).
+
+  메뉴를 안 정하면 Electron 기본 메뉴(File Edit View Window Help, 영어)가 붙는다.
+  윈도우에서 Alt 를 누르면 그게 튀어나왔고, View 에 새로고침·개발자 도구까지 있었다.
+
+  - 윈도우: 메뉴 없음(null). 잘라내기·복사·붙여넣기 단축키는 메뉴 없이도 된다.
+  - 맥: 메뉴가 없으면 ⌘C·⌘V·⌘A 가 안 먹는다 — 편집 메뉴가 단축키를 쥔다.
+    그래서 꼭 필요한 것만 한국어로 둔다.
+  - 개발 실행(패키징 전)에서만 '개발' 메뉴에 새로고침·개발자 도구.
+*/
+function setupAppMenu() {
+  const dev = !app.isPackaged;
+  const devMenu = {
+    label: '개발',
+    submenu: [
+      { label: '새로고침', role: 'reload' },
+      { label: '개발자 도구', role: 'toggleDevTools' },
+    ],
+  };
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(dev ? Menu.buildFromTemplate([devMenu]) : null);
+    return;
+  }
+  const template = [
+    {
+      label: '올리 메신저',
+      submenu: [
+        { label: '올리 메신저 정보', role: 'about' },
+        { type: 'separator' },
+        { label: '올리 메신저 가리기', role: 'hide' },
+        { type: 'separator' },
+        { label: '종료', role: 'quit' },
+      ],
+    },
+    {
+      label: '편집',
+      submenu: [
+        { label: '실행 취소', role: 'undo' },
+        { label: '다시 실행', role: 'redo' },
+        { type: 'separator' },
+        { label: '잘라내기', role: 'cut' },
+        { label: '복사', role: 'copy' },
+        { label: '붙여넣기', role: 'paste' },
+        { label: '전체 선택', role: 'selectAll' },
+      ],
+    },
+    // 창 닫기(⌘W) — 닫기는 숨기기다(close 처리기)
+    { label: '창', submenu: [{ label: '닫기', role: 'close' }, { label: '최소화', role: 'minimize' }] },
+  ];
+  if (dev) template.push(devMenu);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(() => {
+  setupAppMenu();
   setupAutoUpdate();
   /*
     첫 실행이면 자동 시작을 기본으로 켠다 — 회사 메신저는 켜 두는 것이
     기본값이어야 한다. 끄고 싶은 사람은 트레이 메뉴에서 끈다(기억된다).
   */
   const firstRunFlag = path.join(app.getPath('userData'), 'first-run-done');
-  if (!fs.existsSync(firstRunFlag)) {
+  // 개발 실행(npm start)은 건너뛴다 — 개발 PC 로그인 항목에 'Electron' 이 쌓였다 (10/15)
+  if (app.isPackaged && !fs.existsSync(firstRunFlag)) {
     try {
       app.setLoginItemSettings({ openAtLogin: true });
       fs.writeFileSync(firstRunFlag, '1');
