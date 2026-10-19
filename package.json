@@ -1,7 +1,7 @@
 {
   "name": "ally-desktop",
   "productName": "올리 메신저",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "올리(Ally) 설치형 메신저 — Windows",
   "main": "main.js",
   "author": "Ally <official@allywork.kr>",
@@ -42,7 +42,12 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.png"
     },
