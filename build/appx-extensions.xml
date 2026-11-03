@@ -1,0 +1,10 @@
+<!--
+  스토어(MSIX) 판 전용 — 윈도우 시작 시 자동 실행.
+  설치형(NSIS) 판은 레지스트리 Run 키(app.setLoginItemSettings)를 쓰지만
+  MSIX 안에서는 그 키가 격리돼 효과가 없다. 대신 매니페스트에 startupTask 를
+  선언하면 윈도우가 맡고, 사용자는 설정 > 앱 > 시작 프로그램에서 끄고 켠다.
+  electron-builder 가 <Extensions> 로 감싸므로 여기엔 안쪽 요소만 둔다.
+-->
+<desktop:Extension Category="windows.startupTask" Executable="app\Olly Messenger.exe" EntryPoint="Windows.FullTrustApplication">
+  <desktop:StartupTask TaskId="OllyMessengerStartup" Enabled="true" DisplayName="올리 메신저" />
+</desktop:Extension>

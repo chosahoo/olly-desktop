@@ -9,7 +9,9 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win --publish never",
-    "release": "electron-builder --win --publish always"
+    "release": "electron-builder --win --publish always",
+    "dist:store": "npm test && node build/check-store-identity.mjs && electron-builder --win appx --publish never",
+    "test": "node --test \"test/**/*.test.mjs\""
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
@@ -59,6 +61,20 @@
       "runAfterFinish": true,
       "installerSidebar": "build/sidebar.bmp",
       "uninstallerSidebar": "build/sidebar.bmp"
+    },
+    "appx": {
+      "identityName": "STORE_IDENTITY_NAME",
+      "publisher": "CN=STORE_PUBLISHER_ID",
+      "publisherDisplayName": "STORE_PUBLISHER_DISPLAY_NAME",
+      "applicationId": "OllyMessenger",
+      "displayName": "올리 메신저",
+      "backgroundColor": "#0a7d43",
+      "languages": [
+        "ko-KR",
+        "en-US"
+      ],
+      "customExtensionsPath": "build/appx-extensions.xml",
+      "artifactName": "Olly-Messenger-Store-${version}.${ext}"
     }
   }
 }

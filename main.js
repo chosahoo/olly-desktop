@@ -78,6 +78,15 @@ function saveWindowState() {
 */
 const DEFAULT_URL = 'https://www.allywork.kr/messages';
 const APP_URL = app.isPackaged ? DEFAULT_URL : process.env.ALLY_URL || DEFAULT_URL;
+
+/*
+  Microsoft Store 판인가 (2026-11-03).
+  같은 코드를 두 모양으로 배포한다 — 깃허브 설치형(NSIS)과 스토어(MSIX).
+  스토어 판은 세 가지를 윈도우에 맡긴다: 업데이트(스토어가 내려받아 갈아끼움),
+  시작 시 자동 실행(매니페스트 startupTask — 설정 > 앱 > 시작 프로그램),
+  코드 서명(스토어가 서명). 그래서 아래 세 자리에서 갈라진다.
+*/
+const STORE = process.windowsStore === true;
 const APP_ORIGIN = new URL(APP_URL).origin;
 
 /*
@@ -124,9 +133,15 @@ function isMessengerPath(url) {
   메신저 링크는 사람이 쓴 글에서 오므로 여기서 거른다.
 */
 const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+/*
+  스토어 판의 '업데이트 확인' 이 여는 고정 주소 — Microsoft Store 의 '다운로드 및 업데이트'.
+  사람이 쓴 글이 아니라 우리가 박아 둔 상수라 통째로 견줘 허용한다.
+  운영체제로 넘기는 자리는 여전히 아래 한 곳뿐이다.
+*/
+const STORE_UPDATES_URL = 'ms-windows-store://downloadsandupdates';
 function openExternalSafely(url) {
   try {
-    if (EXTERNAL_PROTOCOLS.has(new URL(url).protocol)) shell.openExternal(url);
+    if (url === STORE_UPDATES_URL || EXTERNAL_PROTOCOLS.has(new URL(url).protocol)) shell.openExternal(url);
   } catch {
     /* 못 읽는 주소는 열지 않는다 */
   }
@@ -505,14 +520,19 @@ function createTray() {
             }
           },
         },
-        {
-          label: '시작할 때 자동 실행',
-          type: 'checkbox',
-          checked: app.getLoginItemSettings().openAtLogin,
-          click: (item) => {
-            app.setLoginItemSettings({ openAtLogin: item.checked });
-          },
-        },
+        // 스토어 판은 윈도우 설정 > 앱 > 시작 프로그램이 맡는다 — 여기서는 못 바꾼다
+        ...(STORE
+          ? []
+          : [
+              {
+                label: '시작할 때 자동 실행',
+                type: 'checkbox',
+                checked: app.getLoginItemSettings().openAtLogin,
+                click: (item) => {
+                  app.setLoginItemSettings({ openAtLogin: item.checked });
+                },
+              },
+            ]),
         {
           /*
             **로그아웃이 어디에도 없었다.**
@@ -600,15 +620,17 @@ ipcMain.handle('ally:get-info', (event) => {
   if (!fromOurWindow(event)) return null;
   return {
     version: app.getVersion(),
-    openAtLogin: app.getLoginItemSettings().openAtLogin === true,
+    store: STORE, // 스토어 판 — 자동 실행은 윈도우 설정에서, 업데이트는 스토어에서
+    openAtLogin: STORE ? null : app.getLoginItemSettings().openAtLogin === true,
     hideOnStart: loadPrefs().hideOnStart === true,
     autoLogoutDays: autoLogoutDays(),
     update: updateInfo(),
-    canUpdate: Boolean(updater),
+    canUpdate: Boolean(updater) || STORE, // 스토어 판은 '업데이트 확인' 이 스토어를 연다
   };
 });
 ipcMain.handle('ally:set-open-at-login', (event, on) => {
   if (!fromOurWindow(event)) return false;
+  if (STORE) return null; // 윈도우 설정 > 앱 > 시작 프로그램에서만 바뀐다
   app.setLoginItemSettings({ openAtLogin: Boolean(on) });
   if (tray && tray.rebuild) tray.rebuild();
   return app.getLoginItemSettings().openAtLogin === true;
@@ -721,7 +743,10 @@ function updateMenuItems() {
       items.push({ label: '업데이트 확인 실패 — 다시 시도', click: () => checkForUpdates(true) });
       break;
     default:
-      items.push({ label: `업데이트 확인 (현재 ${v})`, click: () => checkForUpdates(true) });
+      items.push({
+        label: STORE ? `Microsoft Store 에서 업데이트 (현재 ${v})` : `업데이트 확인 (현재 ${v})`,
+        click: () => checkForUpdates(true),
+      });
   }
   return items;
 }
@@ -750,6 +775,11 @@ function updateInfo() {
 }
 
 function checkForUpdates(manual) {
+  if (STORE) {
+    // 스토어가 내려받아 갈아끼운다. 사람이 누르면 스토어의 '다운로드 및 업데이트' 를 연다.
+    if (manual) openExternalSafely(STORE_UPDATES_URL);
+    return;
+  }
   if (!updater) {
     if (manual) notify('업데이트', '이 버전은 자동 업데이트를 지원하지 않습니다.');
     return;
@@ -767,7 +797,7 @@ function checkForUpdates(manual) {
 }
 
 function setupAutoUpdate() {
-  if (!app.isPackaged || process.platform !== 'win32') return;
+  if (!app.isPackaged || process.platform !== 'win32' || STORE) return; // 스토어 판은 스토어가 갱신
   try {
     const { autoUpdater } = require('electron-updater');
     updater = autoUpdater;
@@ -904,7 +934,7 @@ app.whenReady().then(() => {
   */
   const firstRunFlag = path.join(app.getPath('userData'), 'first-run-done');
   // 개발 실행(npm start)은 건너뛴다 — 개발 PC 로그인 항목에 'Electron' 이 쌓였다 (10/15)
-  if (app.isPackaged && !fs.existsSync(firstRunFlag)) {
+  if (app.isPackaged && !STORE && !fs.existsSync(firstRunFlag)) {
     try {
       app.setLoginItemSettings({ openAtLogin: true });
       fs.writeFileSync(firstRunFlag, '1');
