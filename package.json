@@ -12,7 +12,7 @@
     "release": "electron-builder --win --publish always",
     "dist:store": "npm test && node build/check-store-identity.mjs && electron-builder --win appx --publish never",
     "test": "node --test \"test/**/*.test.mjs\"",
-    "dist:mac": "electron-builder --mac dmg --arm64 --publish never -c.productName=\"Olly Messenger\" -c.mac.identity=- -c.mac.hardenedRuntime=false \"-c.mac.extendInfo.CFBundleDisplayName=올리 메신저\" -c.artifactName=\"Olly-Messenger-Mac-${version}-arm64.${ext}\""
+    "dist:mac": "electron-builder --mac dmg --arm64 --publish never -c.productName='Olly Messenger' -c.mac.identity=- -c.mac.hardenedRuntime=false '-c.mac.extendInfo.CFBundleDisplayName=올리 메신저' '-c.artifactName=Olly-Messenger-Mac-${version}-arm64.${ext}'"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
