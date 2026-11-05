@@ -271,6 +271,12 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
+      /*
+        창을 트레이로 숨기거나 뒤로 보내도 방 목록 폴링(10초)이 돈다 (2026-11-02 실사용 점검).
+        크로미움은 숨은 창의 타이머를 1분에 한 번까지 늦춘다 — 새 메시지 배너가 최대 1분 늦거나,
+        그 사이 창을 열면 아예 안 떴다. 배너는 이 폴링이 새 메시지를 볼 때만 나간다.
+      */
+      backgroundThrottling: false,
     },
   });
 
@@ -581,6 +587,12 @@ function createTray() {
 const fromOurWindow = (event) =>
   !!win && !win.isDestroyed() && event.sender === win.webContents;
 
+/*
+  띄운 배너를 붙잡아 둔다 — 지역 변수로만 두면 가비지 수거로 사라져, 윈도우 알림 센터에 남은 배너를
+  눌러도 'click' 이 안 오고 방이 안 열린다(Electron 알려진 동작). 닫히거나 눌리면 놓는다.
+*/
+const liveBanners = new Set();
+
 ipcMain.on('ally:notify', (_event, payload) => {
   if (!fromOurWindow(_event)) return;
   if (!Notification.isSupported()) return;
@@ -590,13 +602,20 @@ ipcMain.on('ally:notify', (_event, payload) => {
     body: String(body || ''),
     icon: appIcon(),
   });
+  liveBanners.add(banner);
+  const release = () => liveBanners.delete(banner);
+  banner.on('close', release);
+  banner.on('failed', release);
   banner.on('click', () => {
+    release();
     if (!win) return;
     win.show();
     win.focus();
     if (roomId) win.webContents.send('ally:open-room', String(roomId));
   });
   banner.show();
+  // 오래 남는 것은 놓는다(알림 센터에 쌓인 채 잊힌 것)
+  if (liveBanners.size > 50) liveBanners.delete(liveBanners.values().next().value);
 });
 
 /*
