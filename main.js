@@ -1007,9 +1007,26 @@ function notify(title, body, onClick) {
     const n = new Notification({ title, body, icon: appIcon() });
     if (onClick) n.on('click', onClick);
     n.show();
+    return n;
   } catch {
     /* 알림 못 띄워도 동작엔 지장 없다 */
+    return null;
   }
+}
+
+/*
+  '새 버전 준비됨' 알림 — 붙잡아 두었다가 종료(갈아끼우기) 직전에 닫는다 (2026-11-09 실기).
+  닫지 않으면 윈도우 알림 센터에 남아, 이미 새 판으로 바뀐 뒤에 옛 "0.1.21 준비됨" 이 다시 떴다.
+  close() 는 알림 센터에서도 지운다.
+*/
+let updateBanner = null;
+function closeUpdateBanner() {
+  try {
+    if (updateBanner) updateBanner.close();
+  } catch {
+    /* 이미 닫혔다 */
+  }
+  updateBanner = null;
 }
 
 function updateMenuItems() {
@@ -1114,7 +1131,8 @@ function setupAutoUpdate() {
     autoUpdater.on('update-downloaded', (info) => {
       setUpdate({ state: 'downloaded', version: info.version, percent: 100, manual: false });
       // 누르면 바로 설치. 안 누르면 종료할 때 알아서 갈아끼운다
-      notify(
+      closeUpdateBanner();
+      updateBanner = notify(
         `올리 메신저 ${info.version} 준비됨`,
         '눌러서 지금 설치합니다. 그대로 두면 다음 실행 때 바뀝니다.',
         () => {
@@ -1259,6 +1277,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  closeUpdateBanner(); // 갈아끼우기 포함 모든 종료 — 옛 '준비됨' 알림을 알림 센터에 남기지 않는다
   quitting = true;
 });
 
