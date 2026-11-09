@@ -393,6 +393,11 @@ function createWindow() {
     callback(false);
   });
 
+  // 깜빡이던 작업표시줄 단추는 창을 올리는 순간 멈춘다
+  win.on('focus', () => {
+    if (process.platform === 'win32') win.flashFrame(false);
+  });
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     // 우리 주소인데 메신저가 아니다 — 이 창에는 안 열고 기본 브라우저로
     if (isOurs(url) && !isMessengerPath(url)) {
@@ -448,8 +453,13 @@ function createWindow() {
 }
 
 function trayIcon() {
+  /*
+    윈도우는 안 읽은 메시지가 있으면 트레이 아이콘에 빨간 점(tray-unread.png) (2026-11-09, CSR 박성완 팀장
+    "하단 아이콘에 불이 들어오든지"). 창을 X 로 닫아 트레이에만 있으면 작업표시줄 단추도 오버레이도 없어서
+    안 읽은 것을 알 길이 툴팁뿐이었다. 맥은 독 뱃지가 있으니 그대로.
+  */
   const file =
-    process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png';
+    process.platform === 'darwin' ? 'trayTemplate.png' : unread > 0 ? 'tray-unread.png' : 'tray.png';
   return nativeImage.createFromPath(path.join(__dirname, 'assets', file));
 }
 
@@ -503,6 +513,7 @@ function createTray() {
   tray = new Tray(trayIcon());
   const rebuild = () => {
     tray.setToolTip(unread > 0 ? `올리 메신저 — 안 읽음 ${unread}` : '올리 메신저');
+    tray.setImage(trayIcon()); // 안 읽음 유무에 따라 빨간 점
     tray.setContextMenu(
       Menu.buildFromTemplate([
         {
@@ -699,8 +710,8 @@ ipcMain.on('ally:badge', (_event, count) => {
       win.setOverlayIcon(null, '');
     }
   }
-  // 창이 숨어 있을 때는 깜빡임까지
-  if (process.platform === 'win32' && win && !win.isVisible() && unread > 0) {
+  // 창이 앞에 없으면(다른 프로그램을 보는 중·최소화) 작업표시줄 단추를 깜빡인다. 창을 올리면 멈춘다(focus).
+  if (process.platform === 'win32' && win && !win.isDestroyed() && !win.isFocused() && unread > 0) {
     win.flashFrame(true);
   }
 });
