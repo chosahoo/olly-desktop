@@ -9,7 +9,20 @@
   로그인 세션은 Electron 프로필에 남아 다음 실행에도 유지된다.
 */
 
-const { app, BrowserWindow, Tray, Menu, shell, ipcMain, nativeImage, Notification, screen } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  shell,
+  ipcMain,
+  nativeImage,
+  Notification,
+  screen,
+  desktopCapturer,
+  clipboard,
+  ClipboardItem,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -242,6 +255,50 @@ function onSomeScreen(bounds) {
   });
 }
 
+/*
+  링크·이동 검사 — 메신저 창과 '대화방 새 창'(openRoomWindow) 이 같은 잣대를 쓴다 (2026-11-09).
+  매개변수 이름을 win 으로 둔다: 웹 레포 check-logic 이 이 글자 그대로를 찾는다.
+*/
+function guardNavigation(win) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    // 우리 주소인데 메신저가 아니다 — 이 창에는 안 열고 기본 브라우저로
+    if (isOurs(url) && !isMessengerPath(url)) {
+      openOursInBrowser(url);
+      return { action: 'deny' };
+    }
+    if (isOurs(url)) return { action: 'allow' };
+    openExternalSafely(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isOurs(url) && !isMessengerPath(url)) {
+      // 메신저 밖 우리 화면(기안 인용 카드 등) — 이 창은 그대로, 기본 브라우저로 연다
+      event.preventDefault();
+      openOursInBrowser(url);
+      return;
+    }
+    if (!isOurs(url)) {
+      event.preventDefault();
+      openExternalSafely(url);
+    }
+  });
+  /*
+    되돌림(redirect)도 같이 막는다. will-navigate 는 처음 이동만 잡는다 —
+    우리 주소로 들어갔다가 30x 로 남의 주소로 넘어가면 그건 안 잡힌다.
+  */
+  win.webContents.on('will-redirect', (event, url) => {
+    if (isOurs(url) && !isMessengerPath(url)) {
+      event.preventDefault();
+      win.loadURL(APP_URL); // 메신저로 되돌린다
+      return;
+    }
+    if (!isOurs(url)) {
+      event.preventDefault();
+      openExternalSafely(url);
+    }
+  });
+}
+
 function createWindow() {
   const stored = loadWindowState();
   const saved = onSomeScreen(stored) ? stored : null;
@@ -398,43 +455,7 @@ function createWindow() {
     if (process.platform === 'win32') win.flashFrame(false);
   });
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    // 우리 주소인데 메신저가 아니다 — 이 창에는 안 열고 기본 브라우저로
-    if (isOurs(url) && !isMessengerPath(url)) {
-      openOursInBrowser(url);
-      return { action: 'deny' };
-    }
-    if (isOurs(url)) return { action: 'allow' };
-    openExternalSafely(url);
-    return { action: 'deny' };
-  });
-  win.webContents.on('will-navigate', (event, url) => {
-    if (isOurs(url) && !isMessengerPath(url)) {
-      // 메신저 밖 우리 화면(기안 인용 카드 등) — 이 창은 그대로, 기본 브라우저로 연다
-      event.preventDefault();
-      openOursInBrowser(url);
-      return;
-    }
-    if (!isOurs(url)) {
-      event.preventDefault();
-      openExternalSafely(url);
-    }
-  });
-  /*
-    되돌림(redirect)도 같이 막는다. will-navigate 는 처음 이동만 잡는다 —
-    우리 주소로 들어갔다가 30x 로 남의 주소로 넘어가면 그건 안 잡힌다.
-  */
-  win.webContents.on('will-redirect', (event, url) => {
-    if (isOurs(url) && !isMessengerPath(url)) {
-      event.preventDefault();
-      win.loadURL(APP_URL); // 메신저로 되돌린다
-      return;
-    }
-    if (!isOurs(url)) {
-      event.preventDefault();
-      openExternalSafely(url);
-    }
-  });
+  guardNavigation(win);
 
   /*
     자동 로그아웃 주기 — 로그인한 지 n일이 지나면 세션을 지우고 로그인 화면으로 (9/10).
@@ -477,6 +498,7 @@ function unreadOverlay() {
 /** 세션을 지우고 로그인 화면으로. show 면 창도 앞으로 */
 async function logoutSession(show) {
   if (!win || win.isDestroyed()) return;
+  closeRoomWindows(); // 다른 사람이 쓰게 될 PC — 열어 둔 방 창도 닫는다
   try {
     await win.webContents.session.clearStorageData({
       storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers'],
@@ -604,14 +626,251 @@ const fromOurWindow = (event) =>
 */
 const liveBanners = new Set();
 
+/*
+  대화방 새 창 — 아마란스 목록의 '새 창으로 열기' 처럼 방 하나를 따로 띄운다 (2026-11-09).
+  주소는 ${APP_ORIGIN}/messages?room=<방 id>&solo=1 — 웹은 solo=1 이면 목록을 숨기고 그 방만 그린다.
+  같은 방은 창 하나만(있으면 앞으로). 배지·배너는 메인 창 것만 받는다(fromOurWindow) — 새 창이
+  같이 폴링해도 알림이 두 번 나가지 않는다.
+*/
+const roomWindows = new Map();
+const ROOM_ID = /^[A-Za-z0-9-]{8,64}$/;
+const isOurContents = (sender) =>
+  (!!win && !win.isDestroyed() && sender === win.webContents) ||
+  [...roomWindows.values()].some((w) => !w.isDestroyed() && w.webContents === sender);
+
+function openRoomWindow(roomId) {
+  const existing = roomWindows.get(roomId);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return true;
+  }
+  // 메인 창 왼쪽에 붙여 연다(화면 밖이면 메인 창 위에 조금 비켜서)
+  const main = win && !win.isDestroyed() ? win.getBounds() : null;
+  const width = 420;
+  const height = main ? Math.max(main.height, 560) : 640;
+  const area = screen.getDisplayMatching(main || { x: 0, y: 0, width, height }).workArea;
+  let x = main ? main.x - width - 8 : undefined;
+  let y = main ? main.y : undefined;
+  if (main && x < area.x) {
+    x = main.x + 32 * (roomWindows.size + 1);
+    y = main.y + 32 * (roomWindows.size + 1);
+  }
+  const w = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    minWidth: 320,
+    minHeight: 400,
+    title: '올리 메신저',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false,
+      backgroundThrottling: false,
+    },
+  });
+  w.on('page-title-updated', (event) => {
+    event.preventDefault();
+    w.setTitle('올리 메신저');
+  });
+  const ua = w.webContents.getUserAgent();
+  w.webContents.setUserAgent(`${ua} AllyDesktop/${app.getVersion()}`);
+  guardNavigation(w);
+  w.once('ready-to-show', () => {
+    w.show();
+    w.focus();
+  });
+  w.on('closed', () => roomWindows.delete(roomId));
+  roomWindows.set(roomId, w);
+  w.loadURL(`${APP_ORIGIN}/messages?room=${encodeURIComponent(roomId)}&solo=1`);
+  return true;
+}
+
+function closeRoomWindows() {
+  for (const w of roomWindows.values()) if (!w.isDestroyed()) w.close();
+  roomWindows.clear();
+}
+
+ipcMain.handle('ally:open-room-window', (event, roomId) => {
+  if (!isOurContents(event.sender)) return false;
+  const id = String(roomId || '');
+  if (!ROOM_ID.test(id)) return false;
+  return openRoomWindow(id);
+});
+
+/*
+  화면 캡처(자르기) — 아마란스 입력칸의 캡처 단추처럼 (2026-11-09).
+  누른 창을 잠깐 숨기고 → 마우스가 있는 화면을 찍어 → 덮개 창(assets/capture.html)에 깔고 →
+  사람이 드래그한 네모만 잘라 클립보드에 그림으로 넣은 뒤 → 창을 되살려 '붙여넣기' 를 일으킨다.
+  웹 입력칸은 붙여넣기의 clipboardData.files 를 이미 첨부로 받으므로 웹은 단추만 달면 된다.
+  웹은 부르기 전에 입력칸에 포커스를 둔다. 클립보드 내용은 잘라낸 그림으로 바뀐다(아마란스도 같다).
+  돌려주는 값: true = 붙여넣음, false = 취소·실패.
+*/
+let capture = null;
+async function finishCapture(rect) {
+  const c = capture;
+  if (!c) return;
+  capture = null;
+  let ok = false;
+  try {
+    if (rect && rect.width >= 4 && rect.height >= 4) {
+      const size = c.image.getSize();
+      const sx = size.width / c.bounds.width;
+      const sy = size.height / c.bounds.height;
+      const crop = {
+        x: Math.max(0, Math.round(rect.x * sx)),
+        y: Math.max(0, Math.round(rect.y * sy)),
+        width: Math.round(rect.width * sx),
+        height: Math.round(rect.height * sy),
+      };
+      crop.width = Math.min(crop.width, size.width - crop.x);
+      crop.height = Math.min(crop.height, size.height - crop.y);
+      if (crop.width > 0 && crop.height > 0) {
+        /*
+          Electron 44 는 clipboard.writeImage 가 없어졌다(W3C 꼴 비동기 API 로 바뀜) —
+          옛 이름으로 부르면 예외가 나서 조용히 '취소' 가 됐다. PNG 를 ClipboardItem 으로 쓴다.
+        */
+        const png = c.image.crop(crop).toPNG();
+        await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
+        ok = true;
+      }
+    }
+  } catch {
+    ok = false;
+  }
+  if (c.overlay && !c.overlay.isDestroyed()) c.overlay.destroy();
+  if (c.host && !c.host.isDestroyed()) {
+    c.host.show();
+    c.host.focus();
+  }
+  if (ok && !c.target.isDestroyed()) {
+    setTimeout(() => {
+      if (!c.target.isDestroyed()) c.target.paste();
+      c.resolve(true);
+    }, 200);
+  } else {
+    c.resolve(false);
+  }
+}
+
+async function startCapture(target) {
+  if (capture) return false;
+  const host = BrowserWindow.fromWebContents(target);
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  if (host) host.hide();
+  await new Promise((r) => setTimeout(r, 250)); // 창이 화면에서 빠질 틈
+  let image = null;
+  try {
+    const sf = display.scaleFactor || 1;
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: {
+        width: Math.round(display.bounds.width * sf),
+        height: Math.round(display.bounds.height * sf),
+      },
+    });
+    const src = sources.find((x) => String(x.display_id) === String(display.id)) || sources[0];
+    image = src && !src.thumbnail.isEmpty() ? src.thumbnail : null;
+  } catch {
+    image = null;
+  }
+  if (!image) {
+    if (host && !host.isDestroyed()) host.show();
+    return false;
+  }
+  const overlay = new BrowserWindow({
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width,
+    height: display.bounds.height,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    // 작업표시줄까지 덮는다 — 그냥 띄우면 윈도우가 작업 영역 높이로 줄여 그림이 찌그러졌다
+    fullscreen: true,
+    enableLargerThanScreen: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'capture-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  overlay.setAlwaysOnTop(true, 'screen-saver');
+  overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  overlay.webContents.on('will-navigate', (e) => e.preventDefault());
+  return new Promise((resolve) => {
+    capture = { overlay, image, bounds: display.bounds, host, target, resolve };
+    overlay.on('closed', () => {
+      if (capture && capture.overlay === overlay) finishCapture(null);
+    });
+    overlay.webContents.once('did-finish-load', () => {
+      overlay.webContents.send('ally:capture-image', image.toDataURL());
+      overlay.setBounds(display.bounds);
+      overlay.show();
+      overlay.moveTop();
+      overlay.focus();
+    });
+    overlay.loadFile(path.join(__dirname, 'assets', 'capture.html'));
+  });
+}
+
+ipcMain.handle('ally:capture', (event) => {
+  if (!isOurContents(event.sender)) return false;
+  return startCapture(event.sender);
+});
+const fromCaptureOverlay = (event) =>
+  !!capture && !capture.overlay.isDestroyed() && event.sender === capture.overlay.webContents;
+ipcMain.on('ally:capture-done', (event, rect) => {
+  if (!fromCaptureOverlay(event)) return;
+  finishCapture(rect);
+});
+ipcMain.on('ally:capture-cancel', (event) => {
+  if (!fromCaptureOverlay(event)) return;
+  finishCapture(null);
+});
+
 ipcMain.on('ally:notify', (_event, payload) => {
   if (!fromOurWindow(_event)) return;
   if (!Notification.isSupported()) return;
-  const { title, body, roomId } = payload || {};
+  const { title, body, roomId, hideAfterSec, popWindow } = payload || {};
+  /*
+    '알림 대신 창 바로 띄우기' (아마란스 설정 › 대화 › 미팅룸 알림 시 '바로 띄우기', 2026-11-09).
+    배너 없이 메신저 창을 앞으로 올리고 그 방을 연다.
+  */
+  if (popWindow === true) {
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.moveTop();
+    win.focus();
+    if (process.platform === 'win32') win.flashFrame(true);
+    if (roomId) win.webContents.send('ally:open-room', String(roomId));
+    return;
+  }
+  /*
+    '알림창 N초 뒤 숨기기' (아마란스 설정 › 알림 › 알림창 N초 후 자동 숨기기).
+    hideAfterSec: 없음·0 = 윈도우 기본(약 5초), 1~3600 = 그 초 뒤 닫음, -1 = 누를 때까지 안 숨김.
+    N초 뒤 닫으면 윈도우 알림 센터에서도 빠진다(Electron close() 동작).
+  */
+  const hide = Number(hideAfterSec);
   const banner = new Notification({
     title: String(title || '올리 메신저'),
     body: String(body || ''),
     icon: appIcon(),
+    timeoutType: hide === -1 ? 'never' : 'default',
   });
   liveBanners.add(banner);
   const release = () => liveBanners.delete(banner);
@@ -625,6 +884,11 @@ ipcMain.on('ally:notify', (_event, payload) => {
     if (roomId) win.webContents.send('ally:open-room', String(roomId));
   });
   banner.show();
+  if (Number.isFinite(hide) && hide > 0) {
+    setTimeout(() => {
+      if (liveBanners.has(banner)) banner.close();
+    }, Math.min(Math.round(hide), 3600) * 1000);
+  }
   // 오래 남는 것은 놓는다(알림 센터에 쌓인 채 잊힌 것)
   if (liveBanners.size > 50) liveBanners.delete(liveBanners.values().next().value);
 });
@@ -656,6 +920,8 @@ ipcMain.handle('ally:get-info', (event) => {
     autoLogoutDays: autoLogoutDays(),
     update: updateInfo(),
     canUpdate: Boolean(updater) || STORE, // 스토어 판은 '업데이트 확인' 이 스토어를 연다
+    // 이 판이 할 줄 아는 것 — 웹은 이걸 보고 단추·설정 칸을 그린다(옛 판엔 없다)
+    features: ['capture', 'roomWindow', 'notifyHide', 'notifyPop'],
   };
 });
 ipcMain.handle('ally:set-open-at-login', (event, on) => {

@@ -567,3 +567,26 @@ electron-builder 가 `!ifmacrodef customCheckAppRunning` 으로 열어 둔
 같은 날 0.1.20 을 **새로 설치하고 설정을 하나도 안 건드린 채** 세 상태(다른 창 보는 중·최소화·트레이)에서
 메시지를 받아 보니 토스트는 모두 2~9초 안에 떴다. 토스트 자체가 안 뜨는 PC 는 윈도우 알림 설정(알림 끔·
 방해 금지)을 먼저 본다. 검사는 `test/tray.test.mjs`.
+
+---
+
+# 아마란스 대조 4가지 (2026-11-09)
+
+아마란스 PC 메신저를 '나와의 대화' 로 대조해 PC 프로그램 몫으로 넷을 만들었다. 웹 단추·설정 칸은 웹 레포 몫.
+
+| 기능 | 웹이 부르는 것 | 동작 |
+|---|---|---|
+| 화면 캡처(자르기) | `allyDesktop.captureScreen()` → true/false | 창을 숨기고 화면을 찍어 덮개(assets/capture.html)에 깔고, 드래그한 네모를 클립보드 그림으로 넣은 뒤 포커스된 입력칸에 붙여넣기. 웹은 부르기 전에 입력칸에 포커스. Esc·오른쪽 클릭 취소 |
+| 대화방 새 창 | `allyDesktop.openRoomWindow(roomId)` | `/messages?room=<id>&solo=1` 을 새 창으로(같은 방은 한 창). 메인 창과 같은 주소 제한(guardNavigation). 배지·배너는 메인 창 것만. 로그아웃하면 닫힘 |
+| 알림창 N초 뒤 숨기기 | `notify({…, hideAfterSec})` | 0·없음=윈도우 기본(약 5초), 1~3600=그 초 뒤 닫음(알림 센터에서도 빠짐), -1=누를 때까지 |
+| 알림 대신 창 띄우기 | `notify({…, popWindow: true})` | 배너 없이 메인 창을 복원·앞으로, 그 방 열기 |
+
+웹은 `getInfo().features` 에 `capture`·`roomWindow`·`notifyHide`·`notifyPop` 가 있을 때만 단추·설정을 그린다(옛 판 대비).
+
+## 실기에서 잡은 것
+
+- **Electron 44 에는 `clipboard.writeImage` 가 없다** — 비동기 W3C 꼴(`clipboard.write([new ClipboardItem({'image/png': Blob})])`)로 바뀌었다.
+  옛 이름을 부르면 예외가 나서 캡처가 조용히 '취소' 로 끝났다. 검사가 옛 이름을 막는다.
+- 덮개를 그냥 띄우면 윈도우가 작업 영역 높이로 줄여(작업표시줄 제외) 그림이 찌그러지고 좌표가 어긋났다 → `fullscreen: true` + `setBounds(display.bounds)`.
+- 시험은 `--remote-debugging-port` 로 띄운 폴더형 빌드에 CDP 로 다리를 직접 불러 했다. 새 창이 먼저 붙으면 그 창의 notify 는
+  일부러 막혀 있어(중복 방지) 알림이 안 뜬다 — 메인 창에 붙어서 시험할 것.

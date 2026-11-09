@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  화면 캡처(자르기) 덮개 — 아마란스 입력칸의 캡처 단추처럼 (2026-11-09).
+  main.js 가 찍어 둔 화면 그림을 배경으로 깔고, 드래그한 네모를 돌려준다.
+  Esc · 오른쪽 클릭 = 취소. 이 페이지는 로컬 파일이고 바깥 주소를 열지 않는다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'self'">
+<title>화면 캡처</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; cursor: crosshair; user-select: none; }
+  #shot { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  #dim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); }
+  #sel { position: fixed; display: none; outline: 2px solid #0a7d43; background: transparent;
+         box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35); }
+  #hint { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); padding: 8px 14px;
+          border-radius: 8px; background: rgba(17, 24, 39, 0.85); color: #fff;
+          font: 14px 'Malgun Gothic', sans-serif; }
+</style>
+</head>
+<body>
+<img id="shot" alt="">
+<div id="dim"></div>
+<div id="sel"></div>
+<div id="hint">끌어서 보낼 부분을 고르세요 · Esc 취소</div>
+<script src="capture.js"></script>
+</body>
+</html>

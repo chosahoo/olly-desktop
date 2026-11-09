@@ -29,6 +29,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "capture-preload.js",
       "assets/**/*",
       "package.json"
     ],

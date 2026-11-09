@@ -14,7 +14,15 @@ contextBridge.exposeInMainWorld('allyDesktop', {
       title: String(payload?.title || ''),
       body: String(payload?.body || ''),
       roomId: String(payload?.roomId || ''),
+      // 알림창 N초 뒤 숨기기: 0·없음=윈도우 기본, 1~3600=그 초 뒤, -1=안 숨김 (2026-11-09)
+      hideAfterSec: Number(payload?.hideAfterSec) || 0,
+      // 알림 대신 창 바로 띄우기
+      popWindow: payload?.popWindow === true,
     }),
+  // 화면 일부를 잘라 지금 포커스된 입력칸에 붙여넣는다 — true=붙임, false=취소 (2026-11-09)
+  captureScreen: () => ipcRenderer.invoke('ally:capture'),
+  // 대화방 하나를 새 창으로 — 주소는 /messages?room=<id>&solo=1 (2026-11-09)
+  openRoomWindow: (roomId) => ipcRenderer.invoke('ally:open-room-window', String(roomId || '')),
   // 9/10 — openExternal 은 뺐다. 메신저 창은 메신저만 연다
   /*
     메신저 설정 화면(웹 /messages › 설정)이 쓰는 것들 (9/9).
