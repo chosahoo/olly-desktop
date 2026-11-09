@@ -29,7 +29,7 @@ test('창이 앞에 없을 때 깜빡이고, 창을 올리면 멈춘다', () => 
 test("'새 버전 준비됨' 알림은 붙잡아 두었다가 종료 직전에 닫는다 — 갱신 뒤 알림 센터에 옛 알림이 남지 않게", () => {
   assert.match(main, /updateBanner = notify\(\s*`올리 메신저 \$\{info\.version\} 준비됨`/);
   const bq = main.slice(main.indexOf("app.on('before-quit'"), main.indexOf("app.on('before-quit'") + 200);
-  assert.match(bq, /closeUpdateBanner\(\);/);
+  assert.match(bq, /^\s*closeUpdateBanner\(\);/m, '종료 때 옛 준비됨 알림을 안 닫는다');
   assert.match(main, /if \(updateBanner\) updateBanner\.close\(\);/);
 });
 
