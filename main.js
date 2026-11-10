@@ -872,6 +872,8 @@ ipcMain.on('ally:notify', (_event, payload) => {
     body: String(body || ''),
     icon: appIcon(),
     timeoutType: hide === -1 ? 'never' : 'default',
+    // 소리는 웹이 설정('알림 소리')대로 낸다 — 윈도우 기본 알림음까지 울면 끔으로 둬도 소리가 났다 (2026-11-10 윈도우 경우의 수)
+    silent: true,
   });
   liveBanners.add(banner);
   const release = () => liveBanners.delete(banner);
