@@ -188,6 +188,9 @@ const isOurs = (url) => {
 let win = null;
 let tray = null;
 let quitting = false;
+// 켠 때 — 켜자마자 받은 업데이트는 바로 갈아끼운다(setupAutoUpdate)
+const STARTED_AT = Date.now();
+const INSTALL_ON_START_MS = 5 * 60 * 1000;
 let unread = 0;
 
 /*
@@ -1152,6 +1155,16 @@ function setupAutoUpdate() {
     });
     autoUpdater.on('update-downloaded', (info) => {
       setUpdate({ state: 'downloaded', version: info.version, percent: 100, manual: false });
+      /*
+        켜자마자(5분 안) 받은 것은 그 자리에서 조용히 갈아끼우고 다시 켠다 (2026-11-11 사장님 "컴터 키면 업데이트 따로 안 눌러도 잘 돼야지").
+        '종료할 때 설치'만으로는 메신저를 끄지 않고 PC 를 끄는 사람(대부분)이 옛 판에 머물렀다 —
+        윈도우 종료는 앱의 quit 를 거치지 않아 설치가 안 되고, 다음 부팅에도 또 '준비됨' 에서 멈췄다.
+      */
+      if (Date.now() - STARTED_AT < INSTALL_ON_START_MS) {
+        quitting = true;
+        autoUpdater.quitAndInstall(true, true);
+        return;
+      }
       // 누르면 바로 설치. 안 누르면 종료할 때 알아서 갈아끼운다
       closeUpdateBanner();
       updateBanner = notify(

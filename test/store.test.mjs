@@ -55,3 +55,12 @@ test('appx 설정 — 식별자 자리표시자는 빌드를 막고, 확장 XML 
   const hasPlaceholder = Object.values(appx).some((v) => typeof v === 'string' && v.includes('STORE_'));
   assert.equal(r.status, hasPlaceholder ? 1 : 0, r.stderr);
 });
+
+test('켜자마자 받은 업데이트는 바로 조용히 설치하고 다시 켠다 — PC 만 끄는 사람이 옛 판에 머물지 않게', () => {
+  const at = main.indexOf("autoUpdater.on('update-downloaded'");
+  const h = main.slice(at, at + 1200);
+  assert.match(main, /const STARTED_AT = Date\.now\(\);/);
+  assert.match(h, /if \(Date\.now\(\) - STARTED_AT < INSTALL_ON_START_MS\) \{\s*quitting = true;\s*autoUpdater\.quitAndInstall\(true, true\);\s*return;/, '켜자마자 받은 업데이트를 바로 설치하지 않는다');
+  assert.ok(h.indexOf('INSTALL_ON_START_MS') < h.indexOf('updateBanner = notify('), '바로 설치 판단이 준비됨 알림보다 먼저여야 한다');
+  assert.match(main, /autoUpdater\.autoInstallOnAppQuit = true;/, '켠 지 오래면 종료할 때 설치는 그대로');
+});
