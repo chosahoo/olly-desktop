@@ -952,8 +952,11 @@ ipcMain.handle('ally:set-auto-logout-days', (event, days) => {
   if (!fromOurWindow(event)) return null;
   const v = Number(days);
   if (!AUTO_LOGOUT_DAYS.includes(v)) return autoLogoutDays();
-  savePrefs({ autoLogoutDays: v });
-  enforceAutoLogout();
+  /*
+    바꾼 순간부터 센다 (2026-11-10 윈도우 전수) — 저장하자마자 검사하니, 로그인한 지 하루 넘은 사람이 '1일' 을 누르면
+    그 자리에서 경고 없이 로그아웃됐다. 바꾸던 다른 설정이 날아간 줄 알았다.
+  */
+  savePrefs({ autoLogoutDays: v, loginAt: Date.now() });
   return v;
 });
 ipcMain.handle('ally:set-hide-on-start', (event, on) => {
