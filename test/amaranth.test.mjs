@@ -17,7 +17,7 @@ test('다리 이름 — captureScreen · openRoomWindow · notify({hideAfterSec,
   assert.match(pre, /openRoomWindow: \(roomId\) => ipcRenderer\.invoke\('ally:open-room-window', String\(roomId \|\| ''\)\)/);
   assert.match(pre, /hideAfterSec: Number\(payload\?\.hideAfterSec\) \|\| 0/);
   assert.match(pre, /popWindow: payload\?\.popWindow === true/);
-  assert.match(main, /features: \['capture', 'roomWindow', 'notifyHide', 'notifyPop'\]/);
+  assert.match(main, /features: \['capture', 'roomWindow', 'notifyHide', 'notifyPop', 'systemIdle', 'copyText'\]/);
 });
 
 test('대화방 새 창 — 방 id 를 거르고, 같은 잣대로 이동을 막고, solo 주소로 연다', () => {

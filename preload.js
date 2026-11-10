@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld('allyDesktop', {
     이 PC 의 프로그램에 속한 값 — 자동 실행·트레이로 시작·업데이트·판 번호.
     읽기는 invoke(응답 있음), 바꾸기도 invoke 로 결과를 받는다.
   */
+  // 이 PC 전체 입력이 없은 지 몇 초 — 자동 자리비움 (2026-11-10)
+  idleSeconds: () => ipcRenderer.invoke('ally:idle-seconds'),
+  // 글 복사 — 창 포커스와 무관하게 (2026-11-10)
+  copyText: (text) => ipcRenderer.invoke('ally:copy-text', String(text || '').slice(0, 2000)),
   getInfo: () => ipcRenderer.invoke('ally:get-info'),
   setOpenAtLogin: (on) => ipcRenderer.invoke('ally:set-open-at-login', Boolean(on)),
   setHideOnStart: (on) => ipcRenderer.invoke('ally:set-hide-on-start', Boolean(on)),

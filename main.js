@@ -22,6 +22,7 @@ const {
   desktopCapturer,
   clipboard,
   ClipboardItem,
+  powerMonitor,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -921,8 +922,24 @@ ipcMain.handle('ally:get-info', (event) => {
     update: updateInfo(),
     canUpdate: Boolean(updater) || STORE, // 스토어 판은 '업데이트 확인' 이 스토어를 연다
     // 이 판이 할 줄 아는 것 — 웹은 이걸 보고 단추·설정 칸을 그린다(옛 판엔 없다)
-    features: ['capture', 'roomWindow', 'notifyHide', 'notifyPop'],
+    features: ['capture', 'roomWindow', 'notifyHide', 'notifyPop', 'systemIdle', 'copyText'],
   };
+});
+/*
+  자동 자리비움은 이 PC 전체 입력으로 잰다 (2026-11-10 윈도우 실기) — 웹은 메신저 창 안의 마우스·키만 봐서
+  엑셀로 일하는 사람도 설정 분이 지나면 동료에게 '자리비움' 으로 보였다. 초 단위 숫자 하나만 돌려준다.
+*/
+ipcMain.handle('ally:idle-seconds', (event) => {
+  if (!fromOurWindow(event)) return null;
+  return powerMonitor.getSystemIdleTime();
+});
+// 글 복사 — 창에 포커스가 없으면 navigator.clipboard 가 실패한다(조직도 우클릭 '메일 복사'). 글만, 2,000자까지
+ipcMain.handle('ally:copy-text', (event, text) => {
+  if (!fromOurWindow(event)) return false;
+  const t = String(text || '').slice(0, 2000);
+  if (!t) return false;
+  clipboard.writeText(t);
+  return true;
 });
 ipcMain.handle('ally:set-open-at-login', (event, on) => {
   if (!fromOurWindow(event)) return false;
