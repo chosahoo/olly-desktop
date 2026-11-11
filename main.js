@@ -364,7 +364,29 @@ function createWindow() {
     이 프로그램은 윈도우 시작과 함께 뜬다 — **네트워크가 붙기 전에 뜨는
     일이 흔하다.** 전에는 그냥 크롬의 회색 오류 화면이 나왔고, 사람은
     프로그램이 고장 난 줄 알았다. 사정을 적고 다시 시도할 자리를 준다.
+
+    **저절로도 다시 연다** (2026-11-11 윈도우 M4). 자동 실행은 트레이로 조용히
+    뜨니 이 화면을 보는 사람이 없다 — 인터넷이 붙은 뒤에도 1분 넘게 이 화면에
+    머물러, 메시지·알림이 하나도 안 왔다. 5초부터 두 배씩(최대 1분) 다시 열고,
+    창 안에서도 'online' 이 오면 바로 연다. 우리 주소가 진짜로 열리면 간격을 되돌린다.
+
+    실패해도 크롬은 오류 문서에 대해 did-finish-load 를 우리 주소로 한 번 더 쏜다.
+    처음엔 그걸 '열렸다' 로 보고 방금 건 다시 열기를 지웠다(실제로 돌려 보다 찾음).
+    그래서 다시 열기는 **아직 실패 화면(data:)에 있을 때만** 하고, 간격은 HTTP 응답이
+    온 이동(did-navigate 200~399)에서만 되돌린다.
   */
+  let retryTimer = null;
+  let retryDelay = 5000;
+  const scheduleRetry = () => {
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      if (!win.isDestroyed() && win.webContents.getURL().startsWith('data:')) win.loadURL(APP_URL);
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 60_000);
+  };
+  win.webContents.on('did-navigate', (_e, url, code) => {
+    if (isOurs(url) && code >= 200 && code < 400) retryDelay = 5000;
+  });
   const showOffline = () => {
     const html = `<!doctype html><meta charset="utf-8">
       <style>
@@ -378,10 +400,12 @@ function createWindow() {
       </style>
       <div class="box">
         <h1>연결하지 못했습니다</h1>
-        <p>인터넷 연결을 확인한 뒤<br>다시 시도해 주세요.</p>
+        <p>인터넷 연결을 확인해 주세요.<br>연결되면 저절로 다시 엽니다.</p>
         <button onclick="location.replace('${APP_URL}')">다시 시도</button>
-      </div>`;
+      </div>
+      <script>addEventListener('online', () => location.replace('${APP_URL}'));</script>`;
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    scheduleRetry();
   };
   win.webContents.on('did-fail-load', (_e, code, _desc, url, isMainFrame) => {
     if (!isMainFrame) return;
