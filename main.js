@@ -587,6 +587,13 @@ function createTray() {
             }
           },
         },
+        // 알림 시험 (2026-11-13 윈도우 G-F1) — 배너가 안 뜰 때 그 자리에서 새 알림을 띄워 본다(기록은 logs/notify.log)
+        {
+          label: '알림 시험',
+          click: () => {
+            if (Notification.isSupported()) showBanner({ title: '올리 메신저', body: '알림 시험입니다.', roomId: null, hide: 0 });
+          },
+        },
         // 스토어 판은 윈도우 설정 > 앱 > 시작 프로그램이 맡는다 — 여기서는 못 바꾼다
         ...(STORE
           ? []
@@ -893,7 +900,32 @@ ipcMain.on('ally:notify', (_event, payload) => {
     hideAfterSec: 없음·0 = 윈도우 기본(약 5초), 1~3600 = 그 초 뒤 닫음, -1 = 누를 때까지 안 숨김.
     N초 뒤 닫으면 윈도우 알림 센터에서도 빠진다(Electron close() 동작).
   */
-  const hide = Number(hideAfterSec);
+  showBanner({ title, body, roomId, hide: Number(hideAfterSec) });
+});
+
+/*
+  알림 기록 (2026-11-13 윈도우 G-F1) — 하루 가까이 켠 설치본에서 배너가 안 뜨고 알림 센터에만 쌓였다(껐다 켜면 정상).
+  원인을 잡으려고 알림마다 show · failed · close · click 을 userData/logs/notify.log 에 한 줄씩 남긴다(1MB 에서 돌림).
+  failed 면 한 번만 새로 띄우고, show 가 3초 안에 안 오면 기록만 한다.
+*/
+function notifyLog(event, extra = '') {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'notify.log');
+    try {
+      if (fs.statSync(file).size > 1024 * 1024) fs.renameSync(file, path.join(dir, 'notify.old.log'));
+    } catch {}
+    fs.appendFileSync(file, `${new Date().toISOString()} ${event} live=${liveBanners.size}${extra ? ` ${extra}` : ''}\n`);
+  } catch {}
+}
+
+function showBanner({ title, body, roomId, hide }, attempt = 0) {
+  /*
+    '알림창 N초 뒤 숨기기' (아마란스 설정 › 알림 › 알림창 N초 후 자동 숨기기).
+    hide: 없음·0 = 윈도우 기본(약 5초), 1~3600 = 그 초 뒤 닫음, -1 = 누를 때까지 안 숨김.
+    N초 뒤 닫으면 윈도우 알림 센터에서도 빠진다(Electron close() 동작).
+  */
   const banner = new Notification({
     title: String(title || '올리 메신저'),
     body: String(body || ''),
@@ -903,17 +935,41 @@ ipcMain.on('ally:notify', (_event, payload) => {
     silent: true,
   });
   liveBanners.add(banner);
+  const tag = `#${attempt}`;
+  let shown = false;
   const release = () => liveBanners.delete(banner);
-  banner.on('close', release);
-  banner.on('failed', release);
+  const retry = (why) => {
+    if (attempt > 0) return;
+    notifyLog('retry', `${tag} ${why}`);
+    showBanner({ title, body, roomId, hide }, attempt + 1);
+  };
+  banner.on('show', () => {
+    shown = true;
+    notifyLog('show', tag);
+  });
+  banner.on('close', () => {
+    notifyLog('close', tag);
+    release();
+  });
+  banner.on('failed', (_e, err) => {
+    notifyLog('failed', `${tag} ${String(err || '')}`);
+    release();
+    retry('failed');
+  });
   banner.on('click', () => {
+    notifyLog('click', tag);
     release();
     if (!win) return;
     win.show();
     win.focus();
     if (roomId) win.webContents.send('ally:open-room', String(roomId));
   });
+  notifyLog('notify', `${tag} hide=${hide}`);
   banner.show();
+  // show 가 3초 안에 안 오면 기록만 — 다시 띄우면 센터에 두 번 쌓일 수 있어 다시 띄우기는 failed 때만
+  setTimeout(() => {
+    if (!shown) notifyLog('no-show-3s', tag);
+  }, 3000);
   if (Number.isFinite(hide) && hide > 0) {
     setTimeout(() => {
       if (liveBanners.has(banner)) banner.close();
@@ -921,7 +977,7 @@ ipcMain.on('ally:notify', (_event, payload) => {
   }
   // 오래 남는 것은 놓는다(알림 센터에 쌓인 채 잊힌 것)
   if (liveBanners.size > 50) liveBanners.delete(liveBanners.values().next().value);
-});
+}
 
 /*
   웹의 게시판·결재 단추 → 기본 브라우저.
