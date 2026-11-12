@@ -62,8 +62,11 @@ test('알림 — N초 뒤 닫기 · -1 은 안 숨김 · popWindow 면 배너 �
   assert.match(n, /if \(popWindow === true\) \{[\s\S]*?win\.show\(\);[\s\S]*?ally:open-room[\s\S]*?return;\s*\}/);
   assert.ok(n.indexOf('popWindow === true') < n.indexOf('new Notification('), '창을 띄울 때도 배너가 먼저 나간다');
   // 배너 띄우기는 showBanner 로 떨어져 나갔다(11/13 55b31c5 — 윈도우는 close 이벤트가 안 와 타이머에서 직접 놓는다)
-  assert.match(n, /if \(process\.platform === 'win32' && !\(hide > 0\) && hide !== -1\) hide = 10;/, "윈도우에서 '기본' 은 10초 뒤 우리가 닫아야 한다(3775d92)");
-  const b = main.slice(main.indexOf('function showBanner('), main.indexOf('function showBanner(') + 3500);
+  const b = main.slice(main.indexOf('function showBanner('), main.indexOf('function showBanner(') + 3800);
+  assert.match(b, /if \(process\.platform === 'win32' && !\(hide > 0\) && hide !== -1\) hide = 10;/, "윈도우에서 '기본' 은 10초 뒤 우리가 닫아야 한다(3775d92) — 트레이 '알림 시험'(hide: 0)도 showBanner 를 지나므로 그 안에서");
+  // notify()('내려받기 완료'·업데이트)도 윈도우에서 10초 뒤 닫는다 — 안 닫히면 뒤 배너가 줄을 선다(11/13 M36 실기)
+  const nf = main.slice(main.indexOf('function notify('), main.indexOf('function notify(') + 1200);
+  assert.match(nf, /if \(process\.platform === 'win32'\) \{\s*setTimeout\(\(\) => \{\s*try \{\s*n\.close\(\);/, "notify() 배너가 윈도우에서 저절로 안 닫힌다");
   assert.match(b, /timeoutType: hide === -1 \? 'never' : 'default'/);
   assert.match(b, /if \(Number\.isFinite\(hide\) && hide > 0\) \{\s*setTimeout\(\(\) => \{\s*if \(!liveBanners\.has\(banner\)\) return;\s*banner\.close\(\);/);
 });

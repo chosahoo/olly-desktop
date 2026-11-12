@@ -937,9 +937,7 @@ ipcMain.on('ally:notify', (_event, payload) => {
     윈도우에서는 '윈도우 기본'(0·값 없음)도 우리가 10초 뒤 닫는다 (2026-11-13 윈도우 G-F1 실측) — 접근성 설정 '알림 표시 시간' 이 긴 PC 는
     첫 배너가 저절로 안 닫히고 남아 뒤 알림이 모두 줄을 서 안 보였다(X 를 누르자 1분 밀린 알림이 그제야 떴다).
   */
-  let hide = Number(hideAfterSec);
-  if (process.platform === 'win32' && !(hide > 0) && hide !== -1) hide = 10;
-  showBanner({ title, body, roomId, hide });
+  showBanner({ title, body, roomId, hide: Number(hideAfterSec) });
 });
 
 /*
@@ -960,6 +958,8 @@ function notifyLog(event, extra = '') {
 }
 
 function showBanner({ title, body, roomId, hide }, attempt = 0) {
+  // 윈도우에서 '윈도우 기본'(0·값 없음)은 저절로 안 닫히는 PC 가 있어 10초 뒤 우리가 닫는다(3775d92) — 트레이 '알림 시험'도 같은 길(11/13 실기)
+  if (process.platform === 'win32' && !(hide > 0) && hide !== -1) hide = 10;
   /*
     '알림창 N초 뒤 숨기기' (아마란스 설정 › 알림 › 알림창 N초 후 자동 숨기기).
     hide: 없음·0 = 윈도우 기본(약 5초), 1~3600 = 그 초 뒤 닫음, -1 = 누를 때까지 안 숨김.
@@ -1158,6 +1158,20 @@ function notify(title, body, onClick) {
     const n = new Notification({ title, body, icon: appIcon() });
     if (onClick) n.on('click', onClick);
     n.show();
+    /*
+      윈도우에서는 저절로 안 닫히는 PC 가 있어(접근성 '알림 표시 시간') 배너가 남고 뒤 알림이 줄을 선다 —
+      '내려받기 완료' 가 30초 넘게 남아 메시지 배너가 끝내 안 보였다(2026-11-13 윈도우 M36 실기, G-F1 과 같은 길).
+      메시지 배너(showBanner)와 같이 10초 뒤 우리가 닫는다. '새 버전 준비됨' 은 종료 때 한 번 더 닫아도 된다.
+    */
+    if (process.platform === 'win32') {
+      setTimeout(() => {
+        try {
+          n.close();
+        } catch {
+          /* 이미 닫혔다 */
+        }
+      }, 10_000);
+    }
     return n;
   } catch {
     /* 알림 못 띄워도 동작엔 지장 없다 */
