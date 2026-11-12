@@ -23,6 +23,7 @@ const {
   clipboard,
   ClipboardItem,
   powerMonitor,
+  dialog,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -303,6 +304,9 @@ function guardNavigation(win) {
   });
 }
 
+// 내려받기 저장 창은 세션에 한 번만 건다
+let downloadHooked = false;
+
 function createWindow() {
   const stored = loadWindowState();
   const saved = onSomeScreen(stored) ? stored : null;
@@ -357,6 +361,35 @@ function createWindow() {
   // 웹이 데스크톱을 알아보는 표식
   const ua = win.webContents.getUserAgent();
   win.webContents.setUserAgent(`${ua} AllyDesktop/${app.getVersion()}`);
+
+  /*
+    내려받기 저장 창 (2026-11-13 윈도우 M36 실기). 웹 메신저는 사진·파일을 blob: 주소에 이름을 붙여 받는다 —
+    will-download 처리가 없으면 크로미움 기본 저장 창이 뜨는데, 제목이 'blob:https://…' 이고 메신저 창 뒤에
+    숨어 떠서 눌러도 아무 일 없는 것처럼 보였다(창 목록에서 찾아야 했다). 메신저 창을 부모로 한 저장 창을
+    띄우고, 파일 이름은 웹이 준 이름(캡처_1112_2314.png) 그대로, 자리는 '다운로드' 폴더로 시작한다.
+    취소하면 받지 않는다. 다 받으면 알림 — 누르면 그 파일이 있는 폴더를 연다.
+    세션은 하나라 창을 다시 만들어도 한 번만 건다(두 번 걸면 저장 창이 두 번 뜬다).
+  */
+  if (!downloadHooked) {
+    downloadHooked = true;
+    win.webContents.session.on('will-download', (_e, item) => {
+      const name = item.getFilename() || '파일';
+      const owner = win && !win.isDestroyed() ? win : undefined;
+      const chosen = dialog.showSaveDialogSync(owner, {
+        title: '내려받기',
+        defaultPath: path.join(app.getPath('downloads'), name),
+      });
+      if (!chosen) {
+        item.cancel();
+        return;
+      }
+      item.setSavePath(chosen);
+      item.once('done', (_ev, state) => {
+        if (state === 'completed') notify('내려받기 완료', path.basename(chosen), () => shell.showItemInFolder(chosen));
+        else if (state === 'interrupted') notify('내려받기 실패', `${path.basename(chosen)} — 다시 시도해 주세요`);
+      });
+    });
+  }
 
   /*
     못 열면 알려 준다.
