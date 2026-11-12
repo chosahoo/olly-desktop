@@ -900,7 +900,13 @@ ipcMain.on('ally:notify', (_event, payload) => {
     hideAfterSec: 없음·0 = 윈도우 기본(약 5초), 1~3600 = 그 초 뒤 닫음, -1 = 누를 때까지 안 숨김.
     N초 뒤 닫으면 윈도우 알림 센터에서도 빠진다(Electron close() 동작).
   */
-  showBanner({ title, body, roomId, hide: Number(hideAfterSec) });
+  /*
+    윈도우에서는 '윈도우 기본'(0·값 없음)도 우리가 10초 뒤 닫는다 (2026-11-13 윈도우 G-F1 실측) — 접근성 설정 '알림 표시 시간' 이 긴 PC 는
+    첫 배너가 저절로 안 닫히고 남아 뒤 알림이 모두 줄을 서 안 보였다(X 를 누르자 1분 밀린 알림이 그제야 떴다).
+  */
+  let hide = Number(hideAfterSec);
+  if (process.platform === 'win32' && !(hide > 0) && hide !== -1) hide = 10;
+  showBanner({ title, body, roomId, hide });
 });
 
 /*
