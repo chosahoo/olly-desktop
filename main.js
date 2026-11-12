@@ -972,7 +972,14 @@ function showBanner({ title, body, roomId, hide }, attempt = 0) {
   }, 3000);
   if (Number.isFinite(hide) && hide > 0) {
     setTimeout(() => {
-      if (liveBanners.has(banner)) banner.close();
+      if (!liveBanners.has(banner)) return;
+      banner.close();
+      /*
+        윈도우에서는 우리가 부른 close() 뒤에 'close' 이벤트가 오지 않는다(11/13 notify.log 실측 — live 가 1→2→3 으로 계속 늘었다).
+        직접 놓는다. 하루 수백 개면 50개를 늘 쥐고 있었다.
+      */
+      notifyLog('closed-by-timer', tag);
+      release();
     }, Math.min(Math.round(hide), 3600) * 1000);
   }
   // 오래 남는 것은 놓는다(알림 센터에 쌓인 채 잊힌 것)
