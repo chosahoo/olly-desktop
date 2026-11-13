@@ -969,7 +969,11 @@ function showBanner({ title, body, roomId, hide }, attempt = 0) {
     title: String(title || '올리 메신저'),
     body: String(body || ''),
     icon: appIcon(),
-    timeoutType: hide === -1 ? 'never' : 'default',
+    /*
+      윈도우는 'default' 배너를 제 표시 시간(기본 5초 남짓)에 스스로 내린다 — '알림창 10초 뒤 숨기기' 인데 6.5초에 닫혔다
+      (11/13 윈도우 notify.log: show 뒤 6.4~6.5초에 'close'). 그보다 길게 둘 때는 'never' 로 띄우고 아래 타이머가 닫는다.
+    */
+    timeoutType: hide === -1 || (process.platform === 'win32' && hide > 5) ? 'never' : 'default',
     // 소리는 웹이 설정('알림 소리')대로 낸다 — 윈도우 기본 알림음까지 울면 끔으로 둬도 소리가 났다 (2026-11-10 윈도우 경우의 수)
     silent: true,
   });
