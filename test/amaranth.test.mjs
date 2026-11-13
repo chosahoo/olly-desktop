@@ -67,6 +67,6 @@ test('알림 — N초 뒤 닫기 · -1 은 안 숨김 · popWindow 면 배너 �
   // notify()('내려받기 완료'·업데이트)도 윈도우에서 10초 뒤 닫는다 — 안 닫히면 뒤 배너가 줄을 선다(11/13 M36 실기)
   const nf = main.slice(main.indexOf('function notify('), main.indexOf('function notify(') + 1200);
   assert.match(nf, /if \(process\.platform === 'win32'\) \{\s*setTimeout\(\(\) => \{\s*try \{\s*n\.close\(\);/, "notify() 배너가 윈도우에서 저절로 안 닫힌다");
-  assert.match(b, /timeoutType: hide === -1 \? 'never' : 'default'/);
+  assert.match(b, /timeoutType: hide === -1 \|\| \(process\.platform === 'win32' && hide > 5\) \? 'never' : 'default'/);
   assert.match(b, /if \(Number\.isFinite\(hide\) && hide > 0\) \{\s*setTimeout\(\(\) => \{\s*if \(!liveBanners\.has\(banner\)\) return;\s*banner\.close\(\);/);
 });
