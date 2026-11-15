@@ -560,6 +560,18 @@ function unreadOverlay() {
 async function logoutSession(show) {
   if (!win || win.isDestroyed()) return;
   closeRoomWindows(); // 다른 사람이 쓰게 될 PC — 열어 둔 방 창도 닫는다
+  /*
+    로그인 창의 '이메일 기억' 두 값은 지운 뒤 다시 넣는다 (2026-11-16 CSR 박성완 팀장 문의) — 저장소를 통째로 지워
+    '이메일 기억'을 켜 두었어도 로그아웃 뒤 이메일 칸이 비어 떴다. 대화 · 쓰던 글 같은 나머지는 그대로 지운다.
+  */
+  let keep = null;
+  try {
+    keep = await win.webContents.executeJavaScript(
+      "JSON.stringify({ e: localStorage.getItem('savedEmail'), r: localStorage.getItem('rememberEmail') })"
+    );
+  } catch {
+    keep = null;
+  }
   try {
     await win.webContents.session.clearStorageData({
       storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers'],
@@ -572,6 +584,17 @@ async function logoutSession(show) {
   if (tray && tray.rebuild) tray.rebuild();
   if (process.platform === 'win32') win.setOverlayIcon(null, '');
   if (process.platform === 'darwin') app.setBadgeCount(0);
+  if (keep) {
+    win.webContents.once('did-finish-load', () => {
+      win.webContents
+        .executeJavaScript(
+          `(() => { const k = ${JSON.stringify(keep)}; const v = JSON.parse(k); const had = !localStorage.getItem('savedEmail');` +
+            ` if (v.e) localStorage.setItem('savedEmail', v.e); if (v.r) localStorage.setItem('rememberEmail', v.r);` +
+            ` if (had && v.e && location.pathname.startsWith('/auth/login')) location.reload(); })()`
+        )
+        .catch(() => {});
+    });
+  }
   win.loadURL(APP_URL);
   if (show) {
     win.show();
@@ -579,8 +602,12 @@ async function logoutSession(show) {
   }
 }
 
-const AUTO_LOGOUT_DAYS = [1, 7, 30];
-const DEFAULT_AUTO_LOGOUT_DAYS = 7;
+/*
+  0 = 자동 로그아웃 안 함 — 기본 (2026-11-16 사장님 "메신저는 계속 로그인돼 있어야지"). 기본이 7일이라 11/9 에 로그인한
+  CSR 메신저가 11/16 아침 일제히 로그인 화면으로 돌아갔다. 매장 공용 PC 처럼 필요한 곳만 설정에서 1 · 7 · 30일을 고른다.
+*/
+const AUTO_LOGOUT_DAYS = [0, 1, 7, 30];
+const DEFAULT_AUTO_LOGOUT_DAYS = 0;
 function autoLogoutDays() {
   const v = Number(loadPrefs().autoLogoutDays);
   return AUTO_LOGOUT_DAYS.includes(v) ? v : DEFAULT_AUTO_LOGOUT_DAYS;
@@ -588,8 +615,9 @@ function autoLogoutDays() {
 /** 로그인한 지 주기를 넘겼으면 로그아웃. 켤 때와 한 시간마다 */
 function enforceAutoLogout() {
   const at = Number(loadPrefs().loginAt);
-  if (!at) return;
-  if (Date.now() - at > autoLogoutDays() * 24 * 60 * 60 * 1000) logoutSession(false);
+  const days = autoLogoutDays();
+  if (!at || days === 0) return;
+  if (Date.now() - at > days * 24 * 60 * 60 * 1000) logoutSession(false);
 }
 
 function createTray() {
