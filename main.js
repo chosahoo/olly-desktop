@@ -547,9 +547,16 @@ function createWindow() {
       return;
     }
     if (pathname.startsWith('/messages')) {
+      // '이메일 기억'을 끄고 로그인했으면 적어 둔 이메일도 지운다 — 끄면 다음 로그인 창은 비어 있어야 한다
       win.webContents
-        .executeJavaScript("fetch('/api/auth/session', { cache: 'no-store' }).then((r) => r.json()).then((j) => (j && j.user && j.user.email) || '').catch(() => '')")
+        .executeJavaScript(
+          "localStorage.getItem('rememberEmail') === 'false' ? Promise.resolve('-off-') : fetch('/api/auth/session', { cache: 'no-store' }).then((r) => r.json()).then((j) => (j && j.user && j.user.email) || '').catch(() => '')"
+        )
         .then((email) => {
+          if (email === '-off-') {
+            if (loadPrefs().lastEmail) savePrefs({ lastEmail: null });
+            return;
+          }
           if (typeof email === 'string' && email.includes('@') && loadPrefs().lastEmail !== email) savePrefs({ lastEmail: email });
         })
         .catch(() => {});
