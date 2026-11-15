@@ -532,6 +532,38 @@ function createWindow() {
       /* 주소가 이상하면 그냥 둔다 */
     }
   });
+
+  /*
+    로그인한 적 있는 계정의 이메일을 프로그램 설정 파일(prefs)에 적어 두고, 로그인 창이 빈 채로 뜨면 채운다
+    (2026-11-16 사장님 "로그인한 적 있는 사람한테는 이메일 저장 체크돼 있고 이메일 넣어 놓으면 안 되나").
+    로그아웃 · 자동 로그아웃이 저장소를 지워도, 이 업데이트 전부터 로그인돼 있던 사람도 다음 로그인 창에 이메일이 있다.
+    본인이 '이메일 기억'을 끈 적이 있으면(rememberEmail 'false') 넣지 않는다.
+  */
+  win.webContents.on('did-finish-load', () => {
+    let pathname = '';
+    try {
+      pathname = new URL(win.webContents.getURL()).pathname;
+    } catch {
+      return;
+    }
+    if (pathname.startsWith('/messages')) {
+      win.webContents
+        .executeJavaScript("fetch('/api/auth/session', { cache: 'no-store' }).then((r) => r.json()).then((j) => (j && j.user && j.user.email) || '').catch(() => '')")
+        .then((email) => {
+          if (typeof email === 'string' && email.includes('@') && loadPrefs().lastEmail !== email) savePrefs({ lastEmail: email });
+        })
+        .catch(() => {});
+    } else if (pathname.startsWith('/auth/login')) {
+      const email = loadPrefs().lastEmail;
+      if (typeof email !== 'string' || !email.includes('@')) return;
+      win.webContents
+        .executeJavaScript(
+          `(() => { if (localStorage.getItem('savedEmail') || localStorage.getItem('rememberEmail') === 'false') return false;` +
+            ` localStorage.setItem('savedEmail', ${JSON.stringify(email)}); location.reload(); return true; })()`
+        )
+        .catch(() => {});
+    }
+  });
 }
 
 function trayIcon() {
